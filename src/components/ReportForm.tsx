@@ -45,6 +45,11 @@ export const ReportForm: React.FC<ReportFormProps> = ({
   const [tds, setTds] = useState<number>(0);
   const [chlorine, setChlorine] = useState<number>(0);
 
+  // ✅ FIX: تحديث الرصيد الأولي عند تغيير previousBalance من المكون الأب
+  useEffect(() => {
+    setRemainingBalance(previousBalance);
+  }, [previousBalance]);
+
   // حساب ساعات التشغيل تلقائياً
   useEffect(() => {
     if (startTime && stopTime) {
@@ -58,6 +63,9 @@ export const ReportForm: React.FC<ReportFormProps> = ({
     if (operatingHours > 0 && fuelConsumptionPerHour > 0) {
       const consumed = calculateFuelConsumed(operatingHours, fuelConsumptionPerHour);
       setFuelConsumed(consumed);
+    } else {
+      // ✅ FIX: إعادة تعيين إلى 0 عند عدم وجود قيم
+      setFuelConsumed(0);
     }
   }, [operatingHours, fuelConsumptionPerHour]);
 
@@ -72,6 +80,9 @@ export const ReportForm: React.FC<ReportFormProps> = ({
     if (operatingHours > 0 && pumpProductionPerHour > 0) {
       const production = calculateTotalPumpProduction(pumpProductionPerHour, operatingHours);
       setTotalProduction(production);
+    } else {
+      // ✅ FIX: إعادة تعيين إلى 0 عند عدم وجود قيم
+      setTotalProduction(0);
     }
   }, [operatingHours, pumpProductionPerHour]);
 
@@ -80,6 +91,9 @@ export const ReportForm: React.FC<ReportFormProps> = ({
     if (totalProduction > 0) {
       const desalted = calculateDesaltedWater(totalProduction, wasteWater);
       setDesaltedWater(desalted);
+    } else {
+      // ✅ FIX: إعادة تعيين إلى 0 عند عدم وجود قيم
+      setDesaltedWater(0);
     }
   }, [totalProduction, wasteWater]);
 
