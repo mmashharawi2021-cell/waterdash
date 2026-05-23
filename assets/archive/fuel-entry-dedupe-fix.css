@@ -1,0 +1,6 @@
+/* Compatibility file: referenced by index.html.
+   The actual incoming fuel duplicate handling is implemented in incoming-fuel-v2.js and fuel-entry-source-fix.js.
+   Keep this file to avoid 404 errors on GitHub Pages. */
+.fuel-duplicate-note {
+  display: block;
+}

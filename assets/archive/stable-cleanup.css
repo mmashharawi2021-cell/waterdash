@@ -1,0 +1,145 @@
+/* Stable cleanup layer: desktop layout, modal, contrast, readable fields */
+.hero {
+  display: grid !important;
+  grid-template-columns: minmax(360px, 1fr) minmax(360px, 560px) !important;
+  gap: 24px !important;
+  align-items: center !important;
+  min-height: 170px !important;
+  padding: 24px 34px !important;
+}
+
+.hero > div:first-child {
+  min-width: 0 !important;
+}
+
+.hero-actions {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  justify-content: flex-start !important;
+  align-content: center !important;
+  gap: 10px !important;
+  max-width: 560px !important;
+}
+
+.hero-actions .btn {
+  flex: 0 1 auto !important;
+  white-space: nowrap !important;
+  min-width: 118px !important;
+}
+
+.hero h1 {
+  max-width: 560px !important;
+}
+
+.dashboard-totals,
+.stats.dashboard-totals {
+  grid-auto-flow: dense !important;
+}
+
+.kpi-card strong,
+.kpi-wide strong,
+.report-card strong {
+  font-variant-numeric: tabular-nums !important;
+  direction: ltr !important;
+  unicode-bidi: plaintext !important;
+}
+
+.modal-panel.large {
+  width: min(1120px, calc(100vw - 44px)) !important;
+  max-height: min(86vh, 820px) !important;
+  overflow: auto !important;
+  padding: 24px !important;
+}
+
+.modal-panel.large .modal-title {
+  margin-bottom: 12px !important;
+}
+
+.modal-panel.large .modal-actions[data-moved-top="true"] {
+  position: sticky !important;
+  top: 0 !important;
+  z-index: 50 !important;
+  margin: 0 0 14px !important;
+  padding: 8px !important;
+  width: fit-content !important;
+  max-width: 100% !important;
+  justify-content: flex-start !important;
+  background: rgba(3, 8, 18, .62) !important;
+  border: 1px solid rgba(255, 255, 255, .14) !important;
+  border-radius: 20px !important;
+  backdrop-filter: blur(16px) !important;
+  -webkit-backdrop-filter: blur(16px) !important;
+}
+
+.modal-panel.large .modal-actions[data-moved-top="true"] .btn {
+  min-height: 40px !important;
+  padding: 8px 16px !important;
+  font-size: 13px !important;
+}
+
+.form-grid input,
+.form-grid textarea,
+.form-grid select,
+.modal-panel input,
+.modal-panel textarea,
+.modal-panel select {
+  color: #f8fafc !important;
+  background: rgba(3, 10, 24, .48) !important;
+  border-color: rgba(255,255,255,.18) !important;
+}
+
+.form-grid input::placeholder,
+.form-grid textarea::placeholder {
+  color: rgba(248,250,252,.55) !important;
+}
+
+.time-picker-grid select,
+.time-picker-grid option {
+  color: #f8fafc !important;
+  background: #0f172a !important;
+}
+
+body.theme-light .form-grid input,
+body.theme-light .form-grid textarea,
+body.theme-light .form-grid select,
+body.theme-light .modal-panel input,
+body.theme-light .modal-panel textarea,
+body.theme-light .modal-panel select {
+  color: #0f172a !important;
+  background: rgba(255,255,255,.76) !important;
+  border-color: rgba(15,23,42,.12) !important;
+}
+
+body.theme-light .modal-panel.large .modal-actions[data-moved-top="true"] {
+  background: rgba(255,255,255,.78) !important;
+  border-color: rgba(15,23,42,.10) !important;
+}
+
+.external-water-row [data-b="cars"] {
+  display: none !important;
+}
+
+@media (max-width: 980px) {
+  .hero {
+    grid-template-columns: 1fr !important;
+  }
+  .hero-actions {
+    max-width: none !important;
+  }
+}
+
+@media (max-width: 720px) {
+  .modal-panel.large {
+    width: calc(100vw - 16px) !important;
+    max-height: calc(100vh - 22px) !important;
+    padding: 16px !important;
+  }
+  .modal-panel.large .modal-actions[data-moved-top="true"] {
+    width: 100% !important;
+    display: grid !important;
+    grid-template-columns: 1fr 1fr !important;
+  }
+  .modal-panel.large .modal-actions[data-moved-top="true"] .btn {
+    width: 100% !important;
+  }
+}

@@ -1,0 +1,68 @@
+name: Build Tahweel Saree APK
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+      - name: Generate simple Android project
+        run: |
+          mkdir -p app/src/main/java/com/mashharawi/fasttransfer app/src/main/res/values
+          cat > settings.gradle <<'EOF'
+          pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
+          dependencyResolutionManagement { repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS); repositories { google(); mavenCentral() } }
+          rootProject.name='TahweelSaree'
+          include ':app'
+          EOF
+          cat > build.gradle <<'EOF'
+          plugins { id 'com.android.application' version '8.7.3' apply false }
+          EOF
+          cat > gradle.properties <<'EOF'
+          android.useAndroidX=false
+          org.gradle.jvmargs=-Xmx2g -Dfile.encoding=UTF-8
+          EOF
+          cat > app/build.gradle <<'EOF'
+          plugins { id 'com.android.application' }
+          android { namespace 'com.mashharawi.fasttransfer'; compileSdk 35
+            defaultConfig { applicationId 'com.mashharawi.fasttransfer'; minSdk 26; targetSdk 35; versionCode 1; versionName '1.0.0' }
+          }
+          EOF
+          cat > app/src/main/res/values/strings.xml <<'EOF'
+          <resources><string name="app_name">تحويل سريع</string></resources>
+          EOF
+          cat > app/src/main/res/values/styles.xml <<'EOF'
+          <resources><style name="AppTheme" parent="android:style/Theme.Material.Light.NoActionBar"/></resources>
+          EOF
+          cat > app/src/main/AndroidManifest.xml <<'EOF'
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+            <uses-permission android:name="android.permission.CALL_PHONE"/>
+            <application android:theme="@style/AppTheme" android:label="تحويل سريع" android:supportsRtl="true">
+              <activity android:name=".MainActivity" android:exported="true">
+                <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
+              </activity>
+            </application>
+          </manifest>
+          EOF
+          cat > app/src/main/java/com/mashharawi/fasttransfer/MainActivity.java <<'EOF'
+          package com.mashharawi.fasttransfer;
+          import android.Manifest;import android.app.*;import android.os.*;import android.content.*;import android.content.pm.*;import android.net.*;import android.graphics.*;import android.view.*;import android.widget.*;
+          public class MainActivity extends Activity{String wallet="jawwal",pending="";EditText pin,phone,amount;LinearLayout form;public void onCreate(Bundle b){super.onCreate(b);getWindow().getDecorView().setLayoutDirection(View.LAYOUT_DIRECTION_RTL);LinearLayout r=new LinearLayout(this);r.setOrientation(LinearLayout.VERTICAL);r.setPadding(32,32,32,32);r.setBackgroundColor(Color.rgb(5,18,32));TextView title=new TextView(this);title.setText("تحويل سريع");title.setTextColor(Color.WHITE);title.setTextSize(28);r.addView(title);Button j=new Button(this);j.setText("جوال باي");Button p=new Button(this);p.setText("بال باي");r.addView(j);r.addView(p);form=new LinearLayout(this);form.setOrientation(LinearLayout.VERTICAL);r.addView(form);j.setOnClickListener(v->{wallet="jawwal";draw();});p.setOnClickListener(v->{wallet="palpay";draw();});draw();setContentView(r);}EditText input(String h){EditText e=new EditText(this);e.setHint(h);e.setTextColor(Color.WHITE);e.setHintTextColor(Color.LTGRAY);return e;}void draw(){form.removeAllViews();if(wallet.equals("jawwal")){pin=input("PIN");form.addView(pin);}phone=input("رقم المستلم");form.addView(phone);amount=input("المبلغ");form.addView(amount);Button b=new Button(this);b.setText("تأكيد التحويل");form.addView(b);b.setOnClickListener(v->confirm());}void confirm(){String ph=phone.getText().toString().replaceAll("[^0-9]","");String am=amount.getText().toString().trim();String pi=wallet.equals("jawwal")?pin.getText().toString().trim():"";if(!ph.matches("05[69][0-9]{7}")){toast("رقم غير صحيح");return;}if(am.isEmpty()){toast("أدخل المبلغ");return;}String code=wallet.equals("jawwal")?"*110*1*"+pi+"*"+ph+"*"+am+"*1#":"*370*1*1*"+ph+"*"+am+"#";new AlertDialog.Builder(this).setTitle("تأكيد").setMessage("الرقم: "+ph+"\nالمبلغ: "+am).setPositiveButton("تنفيذ",(d,w)->call(code)).setNegativeButton("إلغاء",null).show();}void call(String c){pending=c;if(checkSelfPermission(Manifest.permission.CALL_PHONE)!=PackageManager.PERMISSION_GRANTED){requestPermissions(new String[]{Manifest.permission.CALL_PHONE},5);return;}startActivity(new Intent(Intent.ACTION_CALL,Uri.parse("tel:"+c.replace("#","%23"))));}public void onRequestPermissionsResult(int r,String[]p,int[]g){super.onRequestPermissionsResult(r,p,g);if(r==5&&g.length>0&&g[0]==PackageManager.PERMISSION_GRANTED)call(pending);}void toast(String s){Toast.makeText(this,s,Toast.LENGTH_LONG).show();}}
+          EOF
+      - name: Build APK
+        run: gradle :app:assembleDebug --stacktrace
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: tahweel-saree-debug-apk
+          path: app/build/outputs/apk/debug/*.apk

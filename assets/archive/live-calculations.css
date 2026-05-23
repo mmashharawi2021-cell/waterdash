@@ -1,0 +1,1 @@
+.live-updated{animation:liveCalcPulse .55s ease;border-color:rgba(52,211,153,.65)!important;box-shadow:0 0 0 3px rgba(52,211,153,.16)!important}@keyframes liveCalcPulse{0%{background:rgba(52,211,153,.22)}100%{background:inherit}}.calc-note{font-size:11px;opacity:.7;margin-top:4px}

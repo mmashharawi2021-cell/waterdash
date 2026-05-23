@@ -1,0 +1,45 @@
+body.theme-dark .time-picker-grid select,
+body.theme-dark .time-picker-grid option,
+body.theme-dark .quick-time-buttons button {
+  background: #0f172a !important;
+  color: #f8fafc !important;
+  border-color: rgba(255,255,255,.18) !important;
+}
+
+body.theme-dark .time-picker-grid select:focus {
+  background: #111827 !important;
+  color: #ffffff !important;
+  outline: 2px solid rgba(52,211,153,.45) !important;
+}
+
+body.theme-dark .time-picker-grid option {
+  color: #f8fafc !important;
+  background-color: #0f172a !important;
+}
+
+body.theme-dark .date-field,
+body.theme-dark .time-field,
+body.theme-dark input[type="text"].time-field,
+body.theme-dark input[type="text"].date-field {
+  background: rgba(15,23,42,.78) !important;
+  color: #f8fafc !important;
+  border-color: rgba(255,255,255,.18) !important;
+}
+
+body.theme-dark .date-field::placeholder,
+body.theme-dark .time-field::placeholder {
+  color: rgba(248,250,252,.55) !important;
+}
+
+.fuel-previous-note {
+  display: block;
+  margin-top: 5px;
+  font-size: 11px;
+  font-weight: 800;
+  color: #6ee7b7;
+  opacity: .9;
+}
+
+body.theme-light .fuel-previous-note {
+  color: #047857;
+}

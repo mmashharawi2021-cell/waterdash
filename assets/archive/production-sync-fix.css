@@ -1,0 +1,56 @@
+html[data-water-booting="true"] body::before {
+  content: 'جاري تحميل النسخة الصحيحة من النظام...';
+  position: fixed;
+  inset: 0;
+  z-index: 999999;
+  display: grid;
+  place-items: center;
+  direction: rtl;
+  font-family: Cairo, Tahoma, Arial, sans-serif;
+  font-weight: 800;
+  color: #eaf6ff;
+  background:
+    radial-gradient(circle at 50% 20%, rgba(61, 168, 212, .28), transparent 38%),
+    linear-gradient(145deg, #031d36, #07111f 65%, #020617);
+}
+
+html[data-water-booting="true"] #app {
+  opacity: 0;
+}
+
+html[data-water-ready] #app {
+  opacity: 1;
+  transition: opacity .22s ease;
+}
+
+.production-build-badge {
+  position: fixed;
+  left: 14px;
+  bottom: 14px;
+  z-index: 1200;
+  padding: 7px 10px;
+  border-radius: 999px;
+  direction: rtl;
+  font: 700 11px/1.2 Cairo, Tahoma, Arial, sans-serif;
+  color: rgba(234, 246, 255, .92);
+  background: rgba(3, 29, 54, .72);
+  border: 1px solid rgba(125, 211, 252, .25);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, .2);
+  backdrop-filter: blur(12px);
+  pointer-events: none;
+}
+
+.professional-actions.compact-toolbar .toolbar-export {
+  border-color: rgba(125, 211, 252, .38);
+  background: linear-gradient(135deg, rgba(31, 135, 154, .25), rgba(43, 146, 189, .17));
+}
+
+.old-export-hidden {
+  display: none !important;
+}
+
+@media (max-width: 640px) {
+  .production-build-badge {
+    display: none;
+  }
+}
