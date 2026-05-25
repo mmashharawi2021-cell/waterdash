@@ -464,6 +464,27 @@ window.ReportUtils = (() => {
       }
     }
 
+    const totalInputWaterInput = form.querySelector('[name="totalInputWater"]');
+    const recoveryRateInput = form.querySelector('[name="recoveryRate"]');
+    const rejectRatePercentageInput = form.querySelector('[name="rejectRatePercentage"]');
+
+    const totalInput = dailyProduction + rejectWater;
+    if (totalInput) {
+      if (shouldAutoFill(totalInputWaterInput, waterSourceChanged || changedName === 'dailyProduction' || changedName === 'rejectWater')) {
+        set(form, 'totalInputWater', cleanNumber(totalInput));
+      }
+      if (shouldAutoFill(recoveryRateInput, waterSourceChanged || changedName === 'dailyProduction' || changedName === 'rejectWater')) {
+        set(form, 'recoveryRate', cleanNumber((dailyProduction / totalInput) * 100));
+      }
+      if (shouldAutoFill(rejectRatePercentageInput, waterSourceChanged || changedName === 'dailyProduction' || changedName === 'rejectWater')) {
+        set(form, 'rejectRatePercentage', cleanNumber((rejectWater / totalInput) * 100));
+      }
+    } else {
+      if (shouldAutoFill(totalInputWaterInput, waterSourceChanged)) set(form, 'totalInputWater', '');
+      if (shouldAutoFill(recoveryRateInput, waterSourceChanged)) set(form, 'recoveryRate', '');
+      if (shouldAutoFill(rejectRatePercentageInput, waterSourceChanged)) set(form, 'rejectRatePercentage', '');
+    }
+
     const totals = beneficiaryTotals(form);
     set(form, 'filledWater', cleanNumber(totals.filled));
     set(form, 'carsCount', cleanNumber(totals.cars));
