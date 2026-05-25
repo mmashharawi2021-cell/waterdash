@@ -26,7 +26,9 @@ import {
   Loader2,
   RefreshCw,
   Info,
-  AlertCircle
+  AlertCircle,
+  Menu,
+  X
 } from 'lucide-react';
 import './App.css';
 
@@ -46,7 +48,7 @@ const PWAPrompt: React.FC = () => {
   if (!needRefresh && !offlineReady) return null;
 
   return (
-    <div className="fixed bottom-6 right-6 z-50 max-w-sm bg-slate-900/90 border border-indigo-500/30 backdrop-blur-xl p-5 rounded-2xl shadow-2xl flex flex-col gap-3 font-sans text-right animate-bounce-short" dir="rtl">
+    <div className="fixed bottom-6 right-6 z-50 max-w-sm bg-slate-900/90 border border-indigo-500/30 backdrop-blur-xl p-5 rounded-2xl shadow-2xl flex flex-col gap-3 font-sans text-right animate-bounce">
       <div className="flex items-center gap-2">
         <Info className="w-5 h-5 text-indigo-400" />
         <span className="text-white font-bold text-sm">
@@ -191,7 +193,7 @@ const LoginScreen: React.FC = () => {
           <button
             type="submit"
             disabled={loading}
-            className="w-full mt-2 py-4 rounded-2xl bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 text-white font-extrabold shadow-lg shadow-sky-500/20 hover:shadow-sky-500/30 transform hover:-translate-y-0.5 active:translate-y-0 flex items-center justify-center gap-2 transition-all duration-300"
+            className="w-full mt-2 py-4 rounded-2xl bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 text-white font-extrabold shadow-lg shadow-sky-500/20 hover:shadow-lg hover:shadow-sky-400/30 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
           >
             {loading ? (
               <Loader2 className="w-5 h-5 animate-spin" />
@@ -211,6 +213,7 @@ const DashboardInner: React.FC = () => {
   const [screen, setScreen] = useState<'dashboard' | 'addReport' | 'analytics' | 'settings'>('dashboard');
   const [reports, setReports] = useState<DailyReport[]>([]);
   const [loadingReports, setLoadingReports] = useState<boolean>(false);
+  const [sidebarOpen, setSidebarOpen] = useState<boolean>(false);
 
   // Month for financial spreadsheet aggregation
   const [exportMonth, setExportMonth] = useState<string>(
@@ -237,6 +240,11 @@ const DashboardInner: React.FC = () => {
       refreshReportsList();
     }
   }, [isAdmin, screen]);
+
+  // Close sidebar when screen changes
+  useEffect(() => {
+    setSidebarOpen(false);
+  }, [screen]);
 
   // Secure Delete daily report
   const handleDelete = async (id?: string) => {
@@ -270,7 +278,15 @@ const DashboardInner: React.FC = () => {
   if (isOperator) {
     return (
       <div className="builder-app font-sans" dir="rtl">
-        <aside className="builder-sidebar flex flex-col justify-between">
+        {/* Sidebar Overlay for Mobile */}
+        {sidebarOpen && (
+          <div 
+            className="sidebar-overlay active"
+            onClick={() => setSidebarOpen(false)}
+          />
+        )}
+
+        <aside className={`builder-sidebar ${sidebarOpen ? 'active' : ''} flex flex-col justify-between`}>
           <div className="flex flex-col gap-6">
             <div className="brand-panel">
               <span className="logo">💧 WaterDash</span>
@@ -309,6 +325,15 @@ const DashboardInner: React.FC = () => {
           </button>
         </aside>
 
+        {/* Mobile Sidebar Toggle Button */}
+        <button
+          onClick={() => setSidebarOpen(!sidebarOpen)}
+          className="sidebar-toggle-btn show"
+          title="فتح القائمة الجانبية"
+        >
+          {sidebarOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+        </button>
+
         <main className="builder-main">
           {/* Locked to AddNewReport */}
           <AddNewReport onSuccess={() => alert("تم إرسال تقرير الوردية بنجاح!")} />
@@ -320,8 +345,16 @@ const DashboardInner: React.FC = () => {
   // 2. Full Admin Dashboard Panel
   return (
     <div className="builder-app font-sans" dir="rtl">
+      {/* Sidebar Overlay for Mobile */}
+      {sidebarOpen && (
+        <div 
+          className="sidebar-overlay active"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
       {/* Sidebar Navigation */}
-      <aside className="builder-sidebar flex flex-col justify-between">
+      <aside className={`builder-sidebar ${sidebarOpen ? 'active' : ''} flex flex-col justify-between`}>
         <div className="flex flex-col gap-6">
           <div className="brand-panel">
             <span className="logo">💧 WaterDash</span>
@@ -400,6 +433,15 @@ const DashboardInner: React.FC = () => {
         </button>
       </aside>
 
+      {/* Mobile Sidebar Toggle Button */}
+      <button
+        onClick={() => setSidebarOpen(!sidebarOpen)}
+        className="sidebar-toggle-btn show"
+        title="فتح القائمة الجانبية"
+      >
+        {sidebarOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+      </button>
+
       {/* Main Workspace content */}
       <main className="builder-main flex-1 overflow-y-auto">
         
@@ -440,7 +482,7 @@ const DashboardInner: React.FC = () => {
                 <button
                   onClick={handleExcelExport}
                   disabled={exportingExcel}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500 hover:text-white text-xs font-extrabold transition-all duration-300"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500 hover:text-white text-xs font-extrabold transition-all disabled:opacity-50"
                 >
                   {exportingExcel ? (
                     <RefreshCw className="w-3.5 h-3.5 animate-spin" />
@@ -505,7 +547,7 @@ const DashboardInner: React.FC = () => {
                           <td className="py-4 px-4 text-left flex justify-end gap-2 items-center">
                             <button
                               onClick={() => exportDailyReportPDF(report)}
-                              className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 hover:bg-indigo-500 hover:text-white text-xs font-bold transition-all"
+                              className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 hover:bg-indigo-500 hover:text-white text-xs font-extrabold transition-all"
                             >
                               <Download className="w-3.5 h-3.5" />
                               <span>طباعة PDF</span>
