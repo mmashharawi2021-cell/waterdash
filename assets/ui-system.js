@@ -246,25 +246,25 @@ window.AppUI = (() => {
 
       <datalist id="beneficiaryTemplateList">${templates.map(name => `<option value="${esc(name)}"></option>`).join('')}</datalist>
       <form id="reportForm" class="form-grid wizard-form">
-        ${step === 1 ? `<section class="wizard-panel">
+        <section class="wizard-panel" style="display: ${step === 1 ? 'grid' : 'none'};">
           <label>عنوان التقرير<input name="title" value="${esc(r.title)}"></label>
           <label>تاريخ التقرير<input name="reportDate" type="date" value="${r.reportDate || ''}"></label>
           <label>المحطة<input name="stationName" value="${esc(r.stationName || '')}"></label>
           <label>اسم البئر<input name="wellName" value="${esc(r.wellName || '')}"></label>
           <label>اسم المشغل<input name="operatorName" value="${esc(r.operatorName || '')}"></label>
           <label class="wide">ملاحظات عامة<textarea name="generalNotes">${esc(r.generalNotes || '')}</textarea></label>
-        </section>` : ''}
+        </section>
         
-        ${step === 2 ? `<section class="wizard-panel">
+        <section class="wizard-panel" style="display: ${step === 2 ? 'grid' : 'none'};">
           <label>وقت التشغيل<input name="generatorStart" type="time" value="${r.generator.periods?.[0]?.startTime || ''}"></label>
           <label>وقت الإيقاف<input name="generatorEnd" type="time" value="${r.generator.periods?.[0]?.stopTime || ''}"></label>
           <label>ساعات التشغيل<input name="totalRunHours" value="${r.generator.totalRunHours || ''}"></label>
           <label>حالة المولد<input name="generatorStatus" value="${esc(r.generator.status || '')}"></label>
           <label>مشغل المولد<input name="generatorOperator" value="${esc(r.generator.operatorName || '')}"></label>
           <label class="wide">ملاحظات المولد<textarea name="generatorNotes">${esc(r.generator.notes || '')}</textarea></label>
-        </section>` : ''}
+        </section>
         
-        ${step === 3 ? `<section class="wizard-panel">
+        <section class="wizard-panel" style="display: ${step === 3 ? 'grid' : 'none'};">
           <label>الوقود المضاف يومياً<input name="fuelAdded" type="number" value="${r.fuel.addedDaily || ''}"></label>
           <label>الوقود المستهلك يومياً<input name="fuelConsumed" type="number" value="${r.fuel.consumedDaily || ''}"></label>
           <label>المورد من البلدية<input name="fuelMunicipal" type="number" value="${r.fuel.municipalSupplied || ''}"></label>
@@ -272,9 +272,9 @@ window.AppUI = (() => {
           <label>الرصيد الحالي<input name="fuelCurrent" type="number" value="${r.fuel.currentBalance || ''}"></label>
           <label>الفرق/الفاقد<input name="fuelLoss" type="number" value="${r.fuel.loss || ''}"></label>
           <label class="wide">ملاحظات الوقود<textarea name="fuelNotes">${esc(r.fuel.notes || '')}</textarea></label>
-        </section>` : ''}
+        </section>
         
-        ${step === 4 ? `<section class="wizard-panel">
+        <section class="wizard-panel" style="display: ${step === 4 ? 'grid' : 'none'};">
           <label>إنتاج الغاطس كوب/ساعة<input name="submersibleRate" type="number" value="${r.water.submersibleRate || ''}"></label>
           <label>بعد الفلترة كوب/ساعة<input name="filteredRate" type="number" value="${r.water.filteredRate || ''}"></label>
           <label>الإنتاج اليومي بالكوب<input name="dailyProduction" type="number" value="${r.water.dailyProduction || ''}"></label>
@@ -287,9 +287,9 @@ window.AppUI = (() => {
           <label>عدد السيارات<input name="carsCount" type="number" value="${r.water.carsCount || ''}" readonly></label>
           <label>متوسط السيارة<input name="averagePerCar" type="number" value="${r.water.averagePerCar || ''}" readonly></label>
           <label class="wide">ملاحظات المياه<textarea name="waterNotes">${esc(r.water.notes || '')}</textarea></label>
-        </section>` : ''}
+        </section>
         
-        ${step === 5 ? `<section class="wizard-panel wide">
+        <section class="wizard-panel wide" style="display: ${step === 5 ? 'block' : 'none'};">
           <div class="tests-section" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 32px;">
             <label>PH بعد التحلية<input name="phAfter" value="${r.tests.phAfterDesalination || ''}"></label>
             <label>PH مياه الغاطس<input name="phWell" value="${r.tests.phWellWater || ''}"></label>
@@ -313,11 +313,11 @@ window.AppUI = (() => {
             </table>
           </div>
           <button class="btn action-float" type="button" onclick="App.addBeneficiary()" style="margin-top: 16px;">إضافة جهة</button>
-        </section>` : ''}
+        </section>
         
-        ${step === 6 ? `<section class="wizard-panel wide">
+        <section class="wizard-panel wide" style="display: ${step === 6 ? 'block' : 'none'};">
           <div class="report-preview">${esc(window.ReportUtils.whatsappText(r))}</div>
-        </section>` : ''}
+        </section>
       </form>
       
       <div class="wizard-actions">

@@ -683,6 +683,7 @@ window.App = (() => {
   
   function nextStep() {
     if (state.formStep < 6) {
+      state.draft = collectSafeDraft();
       state.formStep++;
       render();
     }
@@ -690,12 +691,14 @@ window.App = (() => {
 
   function prevStep() {
     if (state.formStep > 1) {
+      state.draft = collectSafeDraft();
       state.formStep--;
       render();
     }
   }
 
   function setStep(step) {
+    state.draft = collectSafeDraft();
     state.formStep = step;
     render();
   }
