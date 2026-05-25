@@ -62,7 +62,7 @@ export async function saveUserProfile(profile: UserProfile): Promise<void> {
   }, { merge: true });
 }
 
-// 2. Settings Fetch & Save
+// 2. Settings Fetch & Save (With Double Schema Mapping)
 export async function fetchSystemSettings(): Promise<SystemSettings> {
   await ensureAuthenticated();
   const docRef = doc(db, 'settings', 'main');
@@ -71,8 +71,9 @@ export async function fetchSystemSettings(): Promise<SystemSettings> {
     if (docSnap.exists()) {
       const data = docSnap.data();
       return {
-        submersibleProductionPerHour: Number(data.submersibleProductionPerHour || 55),
-        filteredProductionPerHour: Number(data.filteredProductionPerHour || 33),
+        // Support both old "submersibleRate" and new "submersibleProductionPerHour"
+        submersibleProductionPerHour: Number(data.submersibleRate || data.submersibleProductionPerHour || 55),
+        filteredProductionPerHour: Number(data.filteredRate || data.filteredProductionPerHour || 33),
         defaultStationName: String(data.defaultStationName || "المحطة الرئيسية")
       };
     }
@@ -90,22 +91,26 @@ export async function saveSystemSettings(settings: SystemSettings): Promise<void
   await ensureAuthenticated();
   const docRef = doc(db, 'settings', 'main');
   await setDoc(docRef, {
+    // Write both fields to ensure 100% backward & forward database compatibility
+    submersibleRate: Number(settings.submersibleProductionPerHour),
     submersibleProductionPerHour: Number(settings.submersibleProductionPerHour),
+    filteredRate: Number(settings.filteredProductionPerHour),
     filteredProductionPerHour: Number(settings.filteredProductionPerHour),
     defaultStationName: String(settings.defaultStationName),
     updatedAt: serverTimestamp()
   }, { merge: true });
 }
 
-// 3. Fetch Previous Day's Balance
+// 3. Fetch Previous Day's Balance (With reportDate chronological query)
 export async function fetchPreviousBalance(currentDate: string): Promise<number> {
   await ensureAuthenticated();
   const reportsRef = collection(db, 'reports');
   try {
+    // We query by legacy "reportDate" to read existing database entries correctly
     const q = query(
       reportsRef,
-      where('date', '<', currentDate),
-      orderBy('date', 'desc'),
+      where('reportDate', '<', currentDate),
+      orderBy('reportDate', 'desc'),
       limit(1)
     );
     const snapshot = await getDocs(q);
@@ -119,12 +124,13 @@ export async function fetchPreviousBalance(currentDate: string): Promise<number>
   return 0;
 }
 
-// 4. Save New Report
+// 4. Save New Report (Writes both date and reportDate)
 export async function saveDailyReport(report: DailyReport): Promise<string> {
   await ensureAuthenticated();
   const reportsRef = collection(db, 'reports');
   const docRef = await addDoc(reportsRef, {
     ...report,
+    reportDate: report.date, // support legacy database key
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp()
   });
@@ -137,6 +143,7 @@ export async function updateDailyReport(reportId: string, report: DailyReport): 
   const docRef = doc(db, 'reports', reportId);
   await setDoc(docRef, {
     ...report,
+    reportDate: report.date,
     updatedAt: serverTimestamp()
   }, { merge: true });
 }
@@ -145,42 +152,53 @@ export async function updateDailyReport(reportId: string, report: DailyReport): 
 export async function deleteDailyReport(reportId: string): Promise<void> {
   await ensureAuthenticated();
   const docRef = doc(db, 'reports', reportId);
-  // Direct deletion
   const { deleteDoc } = await import('firebase/firestore');
   await deleteDoc(docRef);
 }
 
-// 7. Fetch Month Reports
+// 7. Fetch Month Reports (With double-field fallback)
 export async function fetchMonthReports(yearMonth: string): Promise<DailyReport[]> {
   await ensureAuthenticated();
   const reportsRef = collection(db, 'reports');
   try {
-    // yearMonth is like "2026-05"
-    // Fetch reports starting from "2026-05-01" to "2026-05-31"
     const startStr = `${yearMonth}-01`;
-    const endStr = `${yearMonth}-31`; // Covers standard month
+    const endStr = `${yearMonth}-31`;
     const q = query(
       reportsRef,
-      where('date', '>=', startStr),
-      where('date', '<=', endStr),
-      orderBy('date', 'desc')
+      where('reportDate', '>=', startStr),
+      where('reportDate', '<=', endStr),
+      orderBy('reportDate', 'desc')
     );
     const snapshot = await getDocs(q);
-    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as DailyReport));
+    return snapshot.docs.map(doc => {
+      const data = doc.data();
+      return {
+        id: doc.id,
+        ...data,
+        date: data.date || data.reportDate, // map reportDate back to date for React state
+      } as DailyReport;
+    });
   } catch (err) {
     console.error("Error fetching monthly reports", err);
     return [];
   }
 }
 
-// 8. Fetch All Reports (for Dashboard preview)
+// 8. Fetch All Reports (With double-field fallback)
 export async function fetchAllReports(): Promise<DailyReport[]> {
   await ensureAuthenticated();
   const reportsRef = collection(db, 'reports');
   try {
-    const q = query(reportsRef, orderBy('date', 'desc'));
+    const q = query(reportsRef, orderBy('reportDate', 'desc'));
     const snapshot = await getDocs(q);
-    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as DailyReport));
+    return snapshot.docs.map(doc => {
+      const data = doc.data();
+      return {
+        id: doc.id,
+        ...data,
+        date: data.date || data.reportDate, // map reportDate back to date for React state
+      } as DailyReport;
+    });
   } catch (err) {
     console.error("Error fetching all reports", err);
     return [];
