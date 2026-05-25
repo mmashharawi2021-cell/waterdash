@@ -590,17 +590,28 @@
 
   function open() {
     if (!window.AuthUsers?.requirePermission?.('manageUsers', 'إدارة المستخدمين')) return;
-    const modal = document.getElementById('usersModal');
-    if (!modal) return;
-    modal.classList.add('open');
+    if (window.App?.state) {
+      window.App.state.prevView = window.App.state.view;
+      window.App.state.view = 'users';
+      window.App.render();
+    }
     renderUsersPage().catch(error => {
       console.error(error);
-      document.getElementById('usersContent').innerHTML = `<div class="notice warn"><p>${esc(error.message || 'تعذر تحميل المستخدمين.')}</p></div>`;
+      const content = document.getElementById('usersContent');
+      if (content) content.innerHTML = `<div class="notice warn"><p>${esc(error.message || 'تعذر تحميل المستخدمين.')}</p></div>`;
     });
   }
 
   function close() {
-    document.getElementById('usersModal')?.classList.remove('open');
+    if (window.App?.state) {
+      if (window.App.state.prevView) {
+        window.App.state.view = window.App.state.prevView;
+        delete window.App.state.prevView;
+      } else {
+        window.App.state.view = 'home';
+      }
+      window.App.render();
+    }
   }
 
   function applyRolePermissions(role) {

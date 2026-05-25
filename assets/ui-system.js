@@ -553,8 +553,8 @@ window.AppUI = (() => {
     return can(permission) ? html : '';
   }
 
-  function kpi(icon, label, value, hint = '') {
-    return `<article class="kpi-card"><div class="kpi-icon">${icon}</div><div class="kpi-details"><span>${esc(label)}</span><strong>${esc(value)}</strong>${hint ? `<small>${esc(hint)}</small>` : ''}</div></article>`;
+  function kpi(icon, label, value, hint = '', theme = 'primary') {
+    return `<article class="kpi-card kpi-card-hoverable"><div class="kpi-icon kpi-icon-${theme}">${icon}</div><div class="kpi-details"><span>${esc(label)}</span><strong>${esc(value)}</strong>${hint ? `<small>${esc(hint)}</small>` : ''}</div></article>`;
   }
 
   function card(report, activeId) {
@@ -646,26 +646,46 @@ window.AppUI = (() => {
         ${button('exportExcel', `<button id="nav-export" class="nav-item ${state.view === 'export' ? 'active' : ''}" onclick="App.goExport()"><i class="icon">📥</i><span>تصدير مخصص</span></button>`)}
 
         <p class="nav-section-title">الإدارة</p>
-        ${button('manageUsers', `<button class="nav-item" onclick="UsersUI.open()"><i class="icon">👥</i><span>المستخدمون</span></button>`)}
-        ${button('manageSettings', `<button class="nav-item" onclick="App.openSettings()"><i class="icon">⚙️</i><span>الإعدادات</span></button>`)}
+        ${button('manageUsers', `<button id="nav-users" class="nav-item ${state.view === 'users' ? 'active' : ''}" onclick="UsersUI.open()"><i class="icon">👥</i><span>المستخدمون</span></button>`)}
+        ${button('manageSettings', `<button id="nav-settings" class="nav-item ${state.view === 'settings' ? 'active' : ''}" onclick="App.openSettings()"><i class="icon">⚙️</i><span>الإعدادات</span></button>`)}
         <button class="nav-item danger-text" onclick="App.logout()"><i class="icon">🚪</i><span>تسجيل الخروج</span></button>
       </nav>
-      
-      <div class="sidebar-footer">
-        <button class="theme-toggle-btn" onclick="const t = window.ThemeManager.current() === 'dark' ? 'light' : 'dark'; window.ThemeManager.saveUserTheme(t);">
-          <i class="icon">🌓</i> تغيير المظهر
-        </button>
-      </div>
     </aside>`;
   }
 
   function stableLayout(state, settings = {}) {
     let reports = (state?.reports || []).map(r => window.ReportUtils?.recalc ? window.ReportUtils.recalc(r) : r);
     const active = reports.find(r => r.id === state?.currentId) || null;
-    const s = summary(reports);
+    
+    // Filter reports specifically for the dashboard stats and visualizations
+    const todayStr = new Date().toISOString().split('T')[0];
+    let dashboardReports = [...reports];
+    
+    const dashboardDateRange = state.dashboardDateRange || 'all';
+    if (dashboardDateRange === 'today') {
+      dashboardReports = dashboardReports.filter(r => r.reportDate === todayStr);
+    } else if (dashboardDateRange === 'week') {
+      const d = new Date(); d.setDate(d.getDate() - 7);
+      const weekAgo = d.toISOString().split('T')[0];
+      dashboardReports = dashboardReports.filter(r => r.reportDate >= weekAgo);
+    } else if (dashboardDateRange === 'month') {
+      const d = new Date(); d.setDate(1);
+      const monthStart = d.toISOString().split('T')[0];
+      dashboardReports = dashboardReports.filter(r => r.reportDate >= monthStart);
+    }
+    
+    const dashboardStation = state.dashboardStation || 'all';
+    if (dashboardStation !== 'all') {
+      dashboardReports = dashboardReports.filter(r => r.stationName === dashboardStation);
+    }
+    
+    const s = summary(dashboardReports);
+    
+    // Live operational status detection
+    const latestReport = reports[0];
+    const isGeneratorRunning = latestReport?.generator?.status === 'يعمل' || latestReport?.generator?.periods?.[0]?.startTime;
     
     let visibleReports = [...reports];
-    const todayStr = window.ReportUtils?.displayDate ? new Date().toISOString().split('T')[0] : '';
     if (state.uiFilter === 'today' && todayStr) {
        visibleReports = visibleReports.filter(r => r.reportDate === todayStr);
     } else if (state.uiFilter === 'week') {
@@ -676,14 +696,19 @@ window.AppUI = (() => {
        visibleReports = visibleReports.filter(r => window.WaterDataQualityPro.classify(r).critical > 0);
     }
 
+    const fuelPct = Math.min(Math.round((s.stock / 1000) * 100), 100) || 0;
+    const isCritical = s.stock < 200;
+
     return `<div class="dashboard-layout">
       ${sidebarMenu(reports.length, active)}
       
       <main class="dashboard-main">
         <header class="top-header">
-          <div class="header-search">
-            <i class="icon">🔍</i>
-            <input type="text" placeholder="البحث في التقارير والمحطات..." disabled>
+          <div class="header-search" style="display: flex; align-items: center; gap: 8px; width: auto; background: transparent; box-shadow: none; padding: 0;">
+            <div class="live-status-container" style="display: flex; align-items: center; gap: 8px; background: var(--bg-card); padding: 8px 16px; border-radius: 20px; border: 1px solid var(--border-color); box-shadow: var(--card-shadow);">
+              <span class="live-status-dot" style="width: 10px; height: 10px; border-radius: 50%; display: inline-block; background: ${isGeneratorRunning ? '#10b981' : '#ef4444'}; box-shadow: 0 0 10px ${isGeneratorRunning ? '#10b981' : '#ef4444'}; animation: pulse-status 1.5s infinite;"></span>
+              <b style="font-size: 13px; font-weight: 700; color: var(--text-main);">${isGeneratorRunning ? 'حالة التشغيل: نشط (المولد يعمل)' : 'حالة التشغيل: متوقف مؤقتاً / صيانة'}</b>
+            </div>
           </div>
           <div class="header-actions">
             <button class="icon-btn theme-toggle" type="button" onclick="App.toggleTheme()" title="تغيير المظهر">🌙</button>
@@ -696,17 +721,115 @@ window.AppUI = (() => {
         <div class="dashboard-content">
           ${state.view === 'form' ? window.AppUI.reportForm(state, settings) : `
           <div id="dashboard-tab-content" style="display: ${state.view === 'home' ? 'block' : 'none'};">
-            <div class="section-header" style="margin-bottom:24px;"><h2>نظرة عامة على البيانات</h2></div>
-            <section class="stats-grid" style="margin-bottom:32px;">
-              ${kpi('⏱️','إجمالي ساعات التشغيل',fmt(s.runHours),'ساعة')}
-              ${kpi('⛽','الوقود المستهلك',fmt(s.fuelConsumed),'لتر')}
-              ${kpi('🚛','الوقود المزود',fmt(s.fuelSupplied),'لتر')}
-              ${kpi('📦','رصيد السولار',s.stock ? fmt(s.stock) : '_',s.stockDate ? `تحديث ${window.ReportUtils?.displayDate ? window.ReportUtils.displayDate(s.stockDate) : s.stockDate}` : 'لا يوجد رصيد')}
-              ${kpi('💧','إنتاج المياه اليومي',fmt(s.waterProduction),'كوب')}
-              ${kpi('♻️','المياه الراجع',fmt(s.rejectWater),'كوب')}
-              ${kpi('📉','نسبة الفاقد',fmt(s.lossPercentage) + '%','من إجمالي الإنتاج')}
-              ${kpi('🧊','المياه المعبأة',fmt(s.filledWater),'كوب')}
-              ${kpi('🚚','السيارات المعبأة',fmt(s.cars,0),'سيارة')}
+            
+            <!-- Glassmorphism Smart Alerts Banner -->
+            <div class="smart-alerts-banner" style="backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); background: linear-gradient(135deg, rgba(239, 68, 68, 0.04) 0%, rgba(245, 158, 11, 0.04) 100%); border: 1px solid var(--border-color); padding: 20px 24px; border-radius: 24px; color: var(--text-main); display: flex; flex-direction: column; gap: 12px; margin-bottom: 32px; box-shadow: var(--card-shadow); border-right: 4px solid #ef4444;">
+              <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+                <span style="font-size: 18px;">📢</span>
+                <span style="font-size: 14px; font-weight: 800; color: var(--text-main); letter-spacing: -0.3px;">التنبيهات التشغيلية والتحليلات الذكية</span>
+              </div>
+              <div style="display: flex; flex-direction: column; gap: 10px;">
+                <div style="display: flex; align-items: center; gap: 12px; background: rgba(245, 158, 11, 0.06); padding: 10px 16px; border-radius: 12px; border: 1px solid rgba(245, 158, 11, 0.12); color: #f97316; font-size: 13px; font-weight: 700; width: 100%;">
+                  <span style="font-size: 16px; flex-shrink: 0;">⚠️</span> 
+                  <span style="line-height: 1.5; flex-grow: 1;">تنبيه: تم رصد انخفاض بنسبة 12% في كفاءة ترشيح المياه خلال التقارير الثلاثة الأخيرة. يرجى فحص فلاتر تحلية المياه.</span>
+                  <button onclick="App.openExplainModal()" style="margin-right: auto; background: rgba(245, 158, 11, 0.15); border: 1px solid rgba(245, 158, 11, 0.3); color: #f97316; padding: 4px 10px; border-radius: 20px; font-size: 11px; cursor: pointer; font-weight: 800; display: flex; align-items: center; gap: 4px; border-style: solid; font-family: inherit; transition: all 0.2s; flex-shrink: 0;" onmouseover="this.style.background='rgba(245,158,11,0.25)'" onmouseout="this.style.background='rgba(245,158,11,0.15)'">
+                    <span>💡 الشرح والتحليل</span>
+                  </button>
+                </div>
+                <div style="display: flex; align-items: center; gap: 12px; background: rgba(239, 68, 68, 0.06); padding: 10px 16px; border-radius: 12px; border: 1px solid rgba(239, 68, 68, 0.12); color: #ef4444; font-size: 13px; font-weight: 700;">
+                  <span style="font-size: 16px; flex-shrink: 0;">⛽</span> 
+                  <span style="line-height: 1.5;">تنبيه: رصيد الديزل الحالي يكفي لأربعة أيام تشغيل فقط.</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="section-header" style="margin-bottom:24px; display: flex; flex-wrap: wrap; gap: 16px; justify-content: space-between; align-items: center;">
+              <h2>نظرة عامة على البيانات</h2>
+              
+              <!-- top-level filter controls -->
+              <div class="dashboard-filters-panel" style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap; background: var(--bg-card); padding: 8px 16px; border-radius: 30px; border: 1px solid var(--border-color); box-shadow: var(--card-shadow);">
+                <div style="display: flex; gap: 6px;">
+                  <button class="btn small ${(!state.dashboardDateRange || state.dashboardDateRange === 'all') ? 'primary' : 'ghost'}" style="border-radius: 20px; padding: 6px 14px; font-size: 13px;" onclick="App.setDashboardDateRange('all')">الكل</button>
+                  <button class="btn small ${state.dashboardDateRange === 'today' ? 'primary' : 'ghost'}" style="border-radius: 20px; padding: 6px 14px; font-size: 13px;" onclick="App.setDashboardDateRange('today')">اليوم</button>
+                  <button class="btn small ${state.dashboardDateRange === 'week' ? 'primary' : 'ghost'}" style="border-radius: 20px; padding: 6px 14px; font-size: 13px;" onclick="App.setDashboardDateRange('week')">آخر 7 أيام</button>
+                  <button class="btn small ${state.dashboardDateRange === 'month' ? 'primary' : 'ghost'}" style="border-radius: 20px; padding: 6px 14px; font-size: 13px;" onclick="App.setDashboardDateRange('month')">هذا الشهر</button>
+                </div>
+                <div style="width: 1px; height: 24px; background: var(--border-color);"></div>
+                <select onchange="App.setDashboardStation(this.value)" style="border: none; background: transparent; color: var(--text-main); font-family: inherit; font-size: 13px; font-weight: 700; outline: none; cursor: pointer; padding: 0 8px;">
+                  <option value="all" ${state.dashboardStation === 'all' ? 'selected' : ''}>جميع المحطات</option>
+                  ${[...new Set(reports.map(r => r.stationName).filter(Boolean))].map(name => `<option value="${esc(name)}" ${state.dashboardStation === name ? 'selected' : ''}>${esc(name)}</option>`).join('')}
+                </select>
+              </div>
+            </div>
+
+            <!-- Section 1: Operation & Fuel -->
+            <div class="dashboard-section-title" style="font-size: 15px; font-weight: 800; color: var(--text-main); margin: 24px 0 16px 0; display: flex; align-items: center; gap: 8px;">
+              <span style="background: var(--primary); width: 4px; height: 16px; border-radius: 2px; display: inline-block;"></span>
+              <span>كفاءة المولد ورصيد الديزل</span>
+            </div>
+            <section class="stats-grid operation-grid" style="margin-bottom:32px;">
+              ${kpi('⏱️','إجمالي ساعات التشغيل',fmt(s.runHours),'ساعة', 'purple')}
+              ${kpi('⛽','الوقود المستهلك',fmt(s.fuelConsumed),'لتر', 'danger')}
+              ${kpi('🚛','الوقود المزود',fmt(s.fuelSupplied),'لتر', 'warning')}
+              
+              <!-- 3D Cylinder Fuel Tank Gauge -->
+              <div class="kpi-card fuel-tank-card" style="padding: 12px 24px; display: flex; flex-direction: row; align-items: center; gap: 20px; grid-column: span 1;">
+                <div class="tank-container" style="position: relative; width: 44px; height: 70px; flex-shrink: 0;">
+                  <svg width="44" height="70" viewBox="0 0 60 95" style="overflow: visible;">
+                    <!-- Cylinder body glass reflection -->
+                    <rect x="0" y="8" width="60" height="74" rx="8" ry="8" fill="none" stroke="var(--border-color)" stroke-width="1.5" style="backdrop-filter: blur(5px); background: rgba(255, 255, 255, 0.03);"></rect>
+                    <!-- Cylinder top cap -->
+                    <ellipse cx="30" cy="8" rx="30" ry="6" fill="var(--bg-main)" stroke="var(--border-color)" stroke-width="1.5"></ellipse>
+                    <!-- Cylinder bottom cap -->
+                    <ellipse cx="30" cy="82" rx="30" ry="6" fill="var(--bg-main)" stroke="var(--border-color)" stroke-width="1.5"></ellipse>
+                    <!-- Liquid content with clipPath -->
+                    <g clip-path="url(#tank-clip)">
+                      <clipPath id="tank-clip">
+                        <rect x="1" y="8.5" width="58" height="73" rx="7" ry="7"></rect>
+                      </clipPath>
+                      <!-- Dynamic height of liquid -->
+                      <rect x="0" y="${82 - (74 * (fuelPct/100))}" width="60" height="${74 * (fuelPct/100)}" fill="${isCritical ? '#ef4444' : '#10b981'}" style="transition: all 1s ease-in-out; opacity: 0.75; animation: ${isCritical ? 'pulse-fuel-liquid 1.2s infinite alternate' : 'none'};"></rect>
+                      <!-- Wave effect on top of liquid -->
+                      <ellipse cx="30" cy="${82 - (74 * (fuelPct/100))}" rx="30" ry="4" fill="${isCritical ? '#f87171' : '#34d399'}" style="transition: all 1s ease-in-out;"></ellipse>
+                    </g>
+                  </svg>
+                  <div class="tank-label" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 10px; font-weight: 800; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,0.6);">${fuelPct}%</div>
+                </div>
+                <div class="kpi-details">
+                  <span>مؤشر رصيد السولار</span>
+                  <strong>${s.stock ? fmt(s.stock) : '_'} لتر</strong>
+                  <small style="color: ${isCritical ? '#ef4444' : 'var(--text-muted)'}; font-weight: ${isCritical ? 'bold' : 'normal'}; animation: ${isCritical ? 'blink-text 1.2s infinite' : 'none'};">${isCritical ? '⚠️ رصيد منخفض! اطلب سولار' : `رصيد السولار الاحتياطي`}</small>
+                </div>
+              </div>
+            </section>
+
+            <!-- Section 2: Water Production & Distribution -->
+            <div class="dashboard-section-title" style="font-size: 15px; font-weight: 800; color: var(--text-main); margin: 24px 0 16px 0; display: flex; align-items: center; gap: 8px;">
+              <span style="background: #10b981; width: 4px; height: 16px; border-radius: 2px; display: inline-block;"></span>
+              <span>كميات وتوزيع وإنتاج المياه</span>
+            </div>
+            <section class="stats-grid water-grid" style="margin-bottom:32px;">
+              ${kpi('💧','إنتاج المياه اليومي',fmt(s.waterProduction),'كوب', 'success')}
+              ${kpi('♻️','المياه الراجع',fmt(s.rejectWater),'كوب', 'emerald')}
+              ${kpi('📉','نسبة الفاقد',fmt(s.lossPercentage) + '%','من إجمالي الإنتاج', 'info')}
+              ${kpi('🧊','المياه المعبأة',fmt(s.filledWater),'كوب', 'primary')}
+              ${kpi('🚚','السيارات المعبأة',fmt(s.cars,0),'سيارة', 'blue')}
+            </section>
+            
+            <!-- Gorgeous Charts Section -->
+            <section class="dashboard-charts-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 24px;">
+              <div class="chart-card" style="background: var(--bg-card); padding: 24px; border-radius: 24px; border: 1px solid var(--border-color); box-shadow: var(--card-shadow);">
+                <h3 style="margin-top: 0; margin-bottom: 16px; font-size: 16px; font-weight: 700; color: var(--text-main);">💧 مخطط الإنتاج والرفض الأسبوعي (آخر 7 تقارير)</h3>
+                <div style="position: relative; height: 260px; width: 100%;">
+                  <canvas id="productionRejectChart"></canvas>
+                </div>
+              </div>
+              <div class="chart-card" style="background: var(--bg-card); padding: 24px; border-radius: 24px; border: 1px solid var(--border-color); box-shadow: var(--card-shadow);">
+                <h3 style="margin-top: 0; margin-bottom: 16px; font-size: 16px; font-weight: 700; color: var(--text-main);">⛽ معدل استهلاك الديزل اليومي (لتر/ساعة تشغيل)</h3>
+                <div style="position: relative; height: 260px; width: 100%;">
+                  <canvas id="fuelConsumptionChart"></canvas>
+                </div>
+              </div>
             </section>
           </div>
 
@@ -779,11 +902,104 @@ window.AppUI = (() => {
               </div>
             </div>
           </div>
+          
+          <div id="settings-tab-content" style="display: ${state.view === 'settings' ? 'block' : 'none'};">
+            <div class="section-header" style="margin-bottom:24px;">
+              <h2>⚙️ الإعدادات الذكية</h2>
+              <p style="color: var(--text-muted); font-size: 13px; margin: 4px 0 0 0;">الكروت المرجعية للحقول الثابتة في المحطة</p>
+            </div>
+            <div style="background: var(--bg-card); padding: 32px; border-radius: 24px; box-shadow: var(--card-shadow); border: 1px solid var(--border-color);">
+              <form id="settingsForm" class="form-grid settings-form">
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-bottom: 24px;">
+                  <article class="setting-card" style="background: var(--bg-card); padding: 16px; border-radius: 16px; border: 1px solid var(--border-color);">
+                    <div style="display: flex; gap: 12px; align-items: center; margin-bottom: 12px;">
+                      <div style="font-size: 24px;">💧</div>
+                      <div><h3 style="margin: 0; font-size: 15px;">المياه الحلوة</h3><small style="color: var(--text-muted); font-size: 11px;">الإنتاج في الساعة</small></div>
+                    </div>
+                    <input name="filteredRate" type="number" placeholder="مثال: 33" value="${settings.filteredRate || ''}" style="width: 100%; padding: 12px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-main); color: var(--text-main);">
+                  </article>
+                  <article class="setting-card" style="background: var(--bg-card); padding: 16px; border-radius: 16px; border: 1px solid var(--border-color);">
+                    <div style="display: flex; gap: 12px; align-items: center; margin-bottom: 12px;">
+                      <div style="font-size: 24px;">♻️</div>
+                      <div><h3 style="margin: 0; font-size: 15px;">نسبة الفاقد / العادم</h3><small style="color: var(--text-muted); font-size: 11px;">كنسبة مئوية %</small></div>
+                    </div>
+                    <input name="lossPercentage" type="number" step="0.01" placeholder="مثال: 32.74" value="${settings.lossPercentage !== undefined ? settings.lossPercentage : '32.74'}" style="width: 100%; padding: 12px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-main); color: var(--text-main);">
+                  </article>
+                  <article class="setting-card" style="background: var(--bg-card); padding: 16px; border-radius: 16px; border: 1px solid var(--border-color);">
+                    <div style="display: flex; gap: 12px; align-items: center; margin-bottom: 12px;">
+                      <div style="font-size: 24px;">⛽</div>
+                      <div><h3 style="margin: 0; font-size: 15px;">استهلاك الوقود</h3><small style="color: var(--text-muted); font-size: 11px;">لتر في الساعة</small></div>
+                    </div>
+                    <input name="fuelRate" type="number" placeholder="مثال: 19" value="${settings.fuelRate || '19'}" style="width: 100%; padding: 12px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-main); color: var(--text-main);">
+                  </article>
+                  <article class="setting-card" style="background: var(--bg-card); padding: 16px; border-radius: 16px; border: 1px solid var(--border-color);">
+                    <div style="display: flex; gap: 12px; align-items: center; margin-bottom: 12px;">
+                      <div style="font-size: 24px;">🚚</div>
+                      <div><h3 style="margin: 0; font-size: 15px;">سعة السيارة</h3><small style="color: var(--text-muted); font-size: 11px;">متوسط الأكواب للسيارة</small></div>
+                    </div>
+                    <input name="carCapacity" type="number" placeholder="مثال: 11.5" value="${settings.carCapacity || ''}" style="width: 100%; padding: 12px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-main); color: var(--text-main);">
+                  </article>
+                  <article class="setting-card" style="background: var(--bg-card); padding: 16px; border-radius: 16px; border: 1px solid var(--border-color);">
+                    <div style="display: flex; gap: 12px; align-items: center; margin-bottom: 12px;">
+                      <div style="font-size: 24px;">🚰</div>
+                      <div><h3 style="margin: 0; font-size: 15px;">إنتاج الغاطس</h3><small style="color: var(--text-muted); font-size: 11px;">للمراقبة والمقارنة</small></div>
+                    </div>
+                    <input name="submersibleRate" type="number" placeholder="مثال: 55" value="${settings.submersibleRate || ''}" style="width: 100%; padding: 12px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-main); color: var(--text-main);">
+                  </article>
+                  <article class="setting-card" style="background: var(--bg-card); padding: 16px; border-radius: 16px; border: 1px solid var(--border-color);">
+                    <div style="display: flex; gap: 12px; align-items: center; margin-bottom: 12px;">
+                      <div style="font-size: 24px;">🧪</div>
+                      <div><h3 style="margin: 0; font-size: 15px;">فحوصات افتراضية</h3><small style="color: var(--text-muted); font-size: 11px;">TDS أو غيرها</small></div>
+                    </div>
+                    <input name="defaultTests" type="text" placeholder="مثال: TDS:110" value="${esc(settings.defaultTests || '')}" style="width: 100%; padding: 12px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-main); color: var(--text-main);">
+                  </article>
+                </div>
+                <section class="wide settings-grid" style="border-top: 1px solid var(--border-color); padding-top: 24px; gap: 12px;">
+                  <h3 style="margin-bottom: 0px; font-size: 16px; grid-column: 1 / -1;">إعدادات نصوص التقرير</h3>
+                  <label>اسم المحطة الافتراضي<input name="defaultStationName" value="${esc(settings.defaultStationName || '')}"></label>
+                  <label>اسم البئر الافتراضي<input name="defaultWellName" value="${esc(settings.defaultWellName || '')}"></label>
+                  <label>اسم المشغل الافتراضي<input name="defaultOperatorName" value="${esc(settings.defaultOperatorName || '')}"></label>
+                  <label>حالة المولد الافتراضية<input name="defaultGeneratorStatus" value="${esc(settings.defaultGeneratorStatus || 'يعمل')}"></label>
+                  <label class="wide">قوالب الجهات المستفيدة <small>اكتب كل جهة في سطر مستقل</small><textarea name="beneficiaries" rows="4">${esc((settings.beneficiaries || []).join('\n'))}</textarea></label>
+                </section>
+                
+                <section class="wide settings-grid" style="border-top: 1px solid var(--border-color); padding-top: 24px; gap: 12px; margin-top: 16px;">
+                  <h3 style="margin-bottom: 8px; font-size: 16px; grid-column: 1 / -1;">نطاق تطبيق القيم الثابتة</h3>
+                  <div style="display: flex; flex-direction: column; gap: 12px; grid-column: 1 / -1; background: var(--bg-card); padding: 16px; border-radius: 8px; border: 1px solid var(--border-color);">
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; flex-direction: row; font-weight: normal;">
+                      <input type="radio" name="applyScope" value="future" checked style="width: auto; margin: 0;">
+                      تطبيق التعديلات على <strong>التقارير المستقبلية فقط</strong> (الخيار الآمن والافتراضي).
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; flex-direction: row; font-weight: normal;">
+                      <input type="radio" name="applyScope" value="past_no_fuel" style="width: auto; margin: 0;">
+                      تطبيق على <strong>جميع التقارير السابقة والمستقبلية</strong> (لتحديث كميات المياه والفاقد فقط دون تغيير أرصدة الوقود التراكمية).
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; flex-direction: row; font-weight: normal; color: #d32f2f;">
+                      <input type="radio" name="applyScope" value="past_with_fuel" style="width: auto; margin: 0;">
+                      تطبيق شامل على <strong>التقارير السابقة والمستقبلية + إعادة بناء أرصدة الوقود التراكمية</strong> (انتباه: سيغير رصيد الوقود الحالي!).
+                    </label>
+                  </div>
+                </section>
+              </form>
+              <div class="actions modal-actions" style="margin-top: 24px; border-top: 1px solid var(--border-color); padding-top: 20px;">
+                <button class="btn primary big action-float" onclick="App.saveSettings()">حفظ الإعدادات</button>
+                <button class="btn" onclick="App.resetSettings()">استرجاع الافتراضي</button>
+              </div>
+            </div>
+          </div>
+          
+          <div id="users-tab-content" style="display: ${state.view === 'users' ? 'block' : 'none'};">
+            <div class="section-header" style="margin-bottom:24px;">
+              <h2>👥 إدارة المستخدمين والصلاحيات</h2>
+              <p style="color: var(--text-muted); font-size: 13px; margin: 4px 0 0 0;">إضافة مستخدمين، تحديد أدوارهم، وتفعيل أو تعطيل الصلاحيات.</p>
+            </div>
+            <div style="background: var(--bg-card); padding: 32px; border-radius: 24px; box-shadow: var(--card-shadow); border: 1px solid var(--border-color);">
+              <div id="usersContent"></div>
+            </div>
+          </div>
+          
           `}
         </div>
-        
-        ${settingsModal(settings)}
-        ${usersModal()}
       </main>
     </div>`;
   }
@@ -797,6 +1013,129 @@ window.AppUI = (() => {
 
   patch();
   window.addEventListener('DOMContentLoaded', patch);
+
+  window.initDashboardCharts = function(state) {
+    const ctx1 = document.getElementById('productionRejectChart');
+    const ctx2 = document.getElementById('fuelConsumptionChart');
+    if (!ctx1 || !ctx2) return;
+    
+    if (window.prodChartInstance) { window.prodChartInstance.destroy(); window.prodChartInstance = null; }
+    if (window.fuelChartInstance) { window.fuelChartInstance.destroy(); window.fuelChartInstance = null; }
+    
+    const reports = state?.reports || [];
+    const todayStr = new Date().toISOString().split('T')[0];
+    let dashboardReports = [...reports];
+    
+    const dashboardDateRange = state.dashboardDateRange || 'all';
+    if (dashboardDateRange === 'today') {
+      dashboardReports = dashboardReports.filter(r => r.reportDate === todayStr);
+    } else if (dashboardDateRange === 'week') {
+      const d = new Date(); d.setDate(d.getDate() - 7);
+      const weekAgo = d.toISOString().split('T')[0];
+      dashboardReports = dashboardReports.filter(r => r.reportDate >= weekAgo);
+    } else if (dashboardDateRange === 'month') {
+      const d = new Date(); d.setDate(1);
+      const monthStart = d.toISOString().split('T')[0];
+      dashboardReports = dashboardReports.filter(r => r.reportDate >= monthStart);
+    }
+    
+    const dashboardStation = state.dashboardStation || 'all';
+    if (dashboardStation !== 'all') {
+      dashboardReports = dashboardReports.filter(r => r.stationName === dashboardStation);
+    }
+    
+    const last7 = [...dashboardReports].slice(0, 7).reverse();
+    const labels = last7.map(r => window.ReportUtils?.displayDate ? window.ReportUtils.displayDate(r.reportDate) : r.reportDate);
+    const prodData = last7.map(r => Number(r.water?.dailyProduction) || 0);
+    const rejectData = last7.map(r => Number(r.water?.rejectWater) || 0);
+    
+    const fuelData = last7.map(r => {
+      const consumed = Number(r.fuel?.consumedDaily) || 0;
+      const [h, m=0] = String(r.generator?.totalRunHours || '0:0').split(':').map(Number);
+      const hours = h + (m / 60);
+      return hours ? +(consumed / hours).toFixed(2) : 0;
+    });
+    
+    const isDark = document.body.classList.contains('theme-dark') || document.documentElement.getAttribute('data-theme') === 'dark';
+    const gridColor = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)';
+    const textColor = isDark ? '#94a3b8' : '#64748b';
+    
+    window.prodChartInstance = new Chart(ctx1, {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [
+          {
+            label: 'المياه المحلاة المنتجة (كوب)',
+            data: prodData,
+            backgroundColor: 'rgba(16, 185, 129, 0.75)',
+            borderColor: '#10b981',
+            borderWidth: 1.5,
+            borderRadius: 6
+          },
+          {
+            label: 'المياه المرفوضة (كوب)',
+            data: rejectData,
+            backgroundColor: 'rgba(239, 68, 68, 0.75)',
+            borderColor: '#ef4444',
+            borderWidth: 1.5,
+            borderRadius: 6
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { labels: { color: textColor, font: { family: 'Cairo', weight: 'bold', size: 11 } } }
+        },
+        scales: {
+          x: { ticks: { color: textColor, font: { family: 'Cairo', size: 10 } }, grid: { display: false } },
+          y: { ticks: { color: textColor, font: { family: 'Cairo', size: 10 } }, grid: { color: gridColor } }
+        }
+      }
+    });
+    
+    let lineGradient = 'rgba(59, 130, 246, 0.1)';
+    if (ctx2 && typeof ctx2.getContext === 'function') {
+      try {
+        const c2d = ctx2.getContext('2d');
+        const grad = c2d.createLinearGradient(0, 0, 0, 250);
+        grad.addColorStop(0, 'rgba(59, 130, 246, 0.35)');
+        grad.addColorStop(1, 'rgba(59, 130, 246, 0.00)');
+        lineGradient = grad;
+      } catch (e) {}
+    }
+
+    window.fuelChartInstance = new Chart(ctx2, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [{
+          label: 'معدل الاستهلاك (لتر/ساعة)',
+          data: fuelData,
+          borderColor: '#3b82f6',
+          backgroundColor: lineGradient,
+          fill: true,
+          tension: 0.4,
+          borderWidth: 2.5,
+          pointBackgroundColor: '#2563eb',
+          pointRadius: 3
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { labels: { color: textColor, font: { family: 'Cairo', weight: 'bold', size: 11 } } }
+        },
+        scales: {
+          x: { ticks: { color: textColor, font: { family: 'Cairo', size: 10 } }, grid: { display: false } },
+          y: { ticks: { color: textColor, font: { family: 'Cairo', size: 10 } }, grid: { color: gridColor } }
+        }
+      }
+    });
+  };
 })();
 
 

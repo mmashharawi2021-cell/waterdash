@@ -192,7 +192,9 @@ window.App = (() => {
     uiFilter: 'all',
     view: 'home',
     formStep: 1,
-    sidebarPinned: localStorage.getItem('sidebarPinned') === 'true'
+    sidebarPinned: localStorage.getItem('sidebarPinned') === 'true',
+    dashboardDateRange: 'all',
+    dashboardStation: 'all'
   };
 
   function loadLocalSettings() {
@@ -218,6 +220,98 @@ window.App = (() => {
     return state.uiFilter || 'all';
   }
 
+  function setDashboardDateRange(range) {
+    state.dashboardDateRange = range;
+    render();
+  }
+
+  function setDashboardStation(station) {
+    state.dashboardStation = station;
+    render();
+  }
+
+  function openExplainModal() {
+    const overlay = document.createElement('div');
+    overlay.id = 'explainModal';
+    overlay.className = 'confirm-overlay';
+    overlay.style.zIndex = '3000';
+    
+    overlay.innerHTML = `
+      <div class="confirm-card" style="width: min(720px, calc(100vw - 24px)); border-radius: 28px; background: linear-gradient(135deg, rgba(15, 23, 42, 0.96), rgba(8, 47, 73, 0.94)); padding: 32px; text-align: right; direction: rtl; border: 1px solid rgba(255, 255, 255, 0.12); box-shadow: 0 35px 100px rgba(0,0,0,0.6); position: relative; max-height: 85vh; overflow-y: auto;">
+        
+        <button onclick="document.getElementById('explainModal').remove()" style="position: absolute; top: 20px; left: 20px; width: 36px; height: 36px; border-radius: 50%; border: 1px solid rgba(255, 255, 255, 0.15); background: rgba(255, 255, 255, 0.08); color: #fff; font-size: 20px; cursor: pointer; display: flex; align-items: center; justify-content: center; z-index: 10;">×</button>
+        
+        <div style="display: flex; gap: 14px; align-items: center; margin-bottom: 24px; border-bottom: 1px solid rgba(255, 255, 255, 0.1); padding-bottom: 16px;">
+          <span style="width: 54px; height: 54px; display: grid; place-items: center; border-radius: 18px; background: rgba(245, 158, 11, 0.15); border: 1px solid rgba(245, 158, 11, 0.28); font-size: 26px;">💡</span>
+          <div>
+            <h2 style="margin: 0; font-size: 20px; font-weight: 900; color: #fff;">تحليل كفاءة الترشيح وفحوصات المياه الذكية</h2>
+            <p style="margin: 4px 0 0; color: rgba(235, 247, 255, 0.7); font-size: 13px; font-weight: 700;">دليل تشغيلي وفيزيائي كيميائي لكيفية مراقبة ومعالجة البيانات</p>
+          </div>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 24px; font-size: 14px; line-height: 1.8; color: rgba(235, 247, 255, 0.85); font-weight: 600;">
+          
+          <!-- Section 1 -->
+          <div>
+            <h3 style="color: #f59e0b; font-size: 16px; font-weight: 800; margin-top: 0; margin-bottom: 8px; display: flex; align-items: center; gap: 8px;">
+              <span style="background: #f59e0b; width: 4px; height: 14px; border-radius: 2px;"></span>
+              <span>1. كفاءة ترشيح المياه (Recovery Rate):</span>
+            </h3>
+            <p style="margin: 0 0 12px 0;">
+              <strong>الترشيح:</strong> هو عملية ضخ مياه الآبار الخام عبر أغشية التناضح العكسي (RO) لفصلها إلى مياه محلاة صالحة للشرب ومياه راجعة (عادم) محملة بالأملاح الزائدة.
+            </p>
+            <div style="background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 16px; padding: 16px; margin: 12px 0; text-align: center; font-family: monospace; font-size: 15px; direction: ltr; color: #6ee7b7; font-weight: 800;">
+              Filtration Efficiency (%) = [Desalinated Water / (Desalinated + Reject)] * 100
+            </div>
+            <p style="margin: 0;">
+              <strong>كيف تم رصد انخفاض الـ 12%؟</strong> 
+              يقوم النظام بحساب متوسط هذه النسبة لآخر 3 تقارير. النسبة المستهدفة تشغيلياً هي <strong>67.26%</strong> (بناءً على فاقد 32.74%). عند حدوث انخفاض إلى <strong>55%</strong>، يستنتج النظام فوراً تراجع الكفاءة بنسبة 12% نتيجة زيادة عادم المياه، وهو مؤشر حرج على انسداد الأغشية، أو حاجة الفلاتر الرملية لغسيل عكسي (Backwash).
+            </p>
+          </div>
+
+          <!-- Section 2 -->
+          <div>
+            <h3 style="color: #10b981; font-size: 16px; font-weight: 800; margin-top: 0; margin-bottom: 8px; display: flex; align-items: center; gap: 8px;">
+              <span style="background: #10b981; width: 4px; height: 14px; border-radius: 2px;"></span>
+              <span>2. الفحوصات المخبرية للمياه وكيفية التحقق منها:</span>
+            </h3>
+            <p style="margin: 0 0 12px 0;">يقوم الموقع تلقائياً بمراقبة وفحص ثلاثة معايير كيميائية وحيوية أساسية لضمان سلامة المياه:</p>
+            
+            <ul style="margin: 0; padding-right: 20px; display: flex; flex-direction: column; gap: 12px; list-style-type: disc;">
+              <li>
+                <strong style="color: #6ee7b7;">مقياس الأملاح الذائبة كلياً (TDS):</strong> 
+                يتم التحقق برمجياً من معادلة اتساق الأملاح: 
+                <span style="direction: ltr; display: inline-block; color: #6ee7b7; font-family: monospace; margin: 0 4px;">TDS Reject &gt; TDS Well &gt; TDS Desalinated</span>. 
+                إذا حدث تداخل في القراءات نتيجة عطل بجهاز EC أو خطأ بشري، يتم تنبيهك فوراً لتجنب فساد البيانات.
+              </li>
+              <li>
+                <strong style="color: #6ee7b7;">الرقم الهيدروجيني (pH):</strong> 
+                يقيس حموضة المياه. مياه الآبار تكون قلوية خفيفة (7.2-8.0)، بينما المياه المحلاة المنتجة تكون حمضية خفيفة (6.2-6.8) بسبب انتزاع البيكربونات. يراقب النظام هذا التوازن لضمان جودة الطعم وحماية الأنابيب من التآكل.
+              </li>
+              <li>
+                <strong style="color: #6ee7b7;">الكلور الحر المتبقي (Free Chlorine):</strong> 
+                المعقم الحيوي لحماية المياه من التلوث الجرثومي أثناء النقل. يجب أن يتراوح بين <strong>0.2 إلى 0.5 PPM</strong>. إذا سجل المشغل قيمة صفر، يطلق الموقع فوراً تحذيراً بيولوجياً باللون الأحمر لتجنب انتشار الميكروبات.
+              </li>
+            </ul>
+          </div>
+          
+        </div>
+        
+        <div style="margin-top: 28px; display: flex; justify-content: flex-end;">
+          <button onclick="document.getElementById('explainModal').remove()" class="btn primary" style="min-width: 120px; border-radius: 20px; height: 42px; font-weight: 800; font-size: 14px; justify-content: center; border-style: solid; font-family: inherit; cursor: pointer;">فهمت ذلك</button>
+        </div>
+      </div>
+    `;
+    
+    document.body.appendChild(overlay);
+    
+    requestAnimationFrame(() => overlay.classList.add('show'));
+    
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) overlay.remove();
+    });
+  }
+
   function render() {
     // Sort logic
     state.reports = [...state.reports].sort((a, b) => b.reportDate.localeCompare(a.reportDate));
@@ -229,6 +323,12 @@ window.App = (() => {
     setHtml(window.AppUI.layout(state, state.settings));
     bindTabs();
     window.LiveCalculations?.bind?.();
+
+    if (state.view === 'home') {
+      setTimeout(() => {
+        window.initDashboardCharts?.(state);
+      }, 50);
+    }
   }
 
   function toggleTheme() {
@@ -821,10 +921,19 @@ window.App = (() => {
   }
 
   function openSettings() {
+    state.prevView = state.view;
+    state.view = 'settings';
     render();
-    document.getElementById('settingsModal')?.classList.add('open');
   }
-  function closeSettings() { document.getElementById('settingsModal')?.classList.remove('open'); }
+  function closeSettings() {
+    if (state.prevView) {
+      state.view = state.prevView;
+      delete state.prevView;
+    } else {
+      state.view = 'home';
+    }
+    render();
+  }
 
   async function applySettingsToPastReports(scope, settings) {
     if (!state.reports || !state.reports.length) return;
@@ -940,7 +1049,7 @@ window.App = (() => {
     toast('تم استرجاع الإعدادات الافتراضية', 'ok');
   }
 
-  return { start, login, logout, render, select, openNew, duplicateLastReport, openEdit, closeModal, togglePaste, parseText, addBeneficiary, addBeneficiaryTemplate, applyBeneficiaryTemplates, clearBeneficiaryAmounts, removeBeneficiary, saveReport, deleteReport, copyWhatsApp, exportPdf, exportOneExcel, exportAllExcel, exportFilteredExcel, exportFilteredWhatsApp, exportFilteredWord, exportFilteredPDF, exportFilteredImage, goHome, goReports, goExport, openSettings, closeSettings, saveSettings, resetSettings, setUIFilter, getUIFilter, nextStep, prevStep, setStep, toggleSidebar, toggleTheme, hardRefresh };
+  return { state, start, login, logout, render, select, openNew, duplicateLastReport, openEdit, closeModal, togglePaste, parseText, addBeneficiary, addBeneficiaryTemplate, applyBeneficiaryTemplates, clearBeneficiaryAmounts, removeBeneficiary, saveReport, deleteReport, copyWhatsApp, exportPdf, exportOneExcel, exportAllExcel, exportFilteredExcel, exportFilteredWhatsApp, exportFilteredWord, exportFilteredPDF, exportFilteredImage, goHome, goReports, goExport, openSettings, closeSettings, saveSettings, resetSettings, setUIFilter, getUIFilter, nextStep, prevStep, setStep, toggleSidebar, toggleTheme, hardRefresh, setDashboardDateRange, setDashboardStation, openExplainModal };
 })();
 
 window.addEventListener('DOMContentLoaded', () => window.App.start());

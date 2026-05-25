@@ -154,6 +154,7 @@ body.theme-dark .brand-icon {
   font-family: inherit !important; font-size: 15px !important; font-weight: 700 !important; cursor: pointer !important; text-align: right !important; width: 100% !important; transition: all 0.2s !important;
 }
 .nav-item:hover { background: var(--bg-hover) !important; color: var(--primary) !important; }
+.nav-item:hover .icon { color: var(--primary) !important; }
 .nav-item.active { background: var(--primary) !important; color: white !important; }
 .nav-item.active .icon { color: white !important; }
 .nav-item .icon { font-size: 20px !important; color: var(--text-muted) !important; transition: color 0.2s !important; font-style: normal !important; display: block !important; }
@@ -405,6 +406,166 @@ body.theme-dark .brand-icon {
 .form-view .dashboard-main {
   background: transparent;
   padding-bottom: 60px;
+}
+
+@keyframes pulse-status {
+  0% { opacity: 0.3; transform: scale(0.9); }
+  50% { opacity: 1; transform: scale(1.1); }
+  100% { opacity: 0.3; transform: scale(0.9); }
+}
+
+@keyframes pulse-fuel-liquid {
+  0% { fill: #ef4444; opacity: 0.65; }
+  100% { fill: #dc2626; opacity: 0.9; }
+}
+
+@keyframes blink-text {
+  0% { opacity: 0.4; }
+  100% { opacity: 1; }
+}
+
+/* Modern Dashboard Grids & Alignments */
+.operation-grid {
+  grid-template-columns: repeat(4, 1fr) !important;
+}
+.water-grid {
+  grid-template-columns: repeat(5, 1fr) !important;
+}
+
+@media (max-width: 1400px) {
+  .water-grid {
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)) !important;
+  }
+}
+
+@media (max-width: 1100px) {
+  .operation-grid {
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)) !important;
+  }
+}
+
+/* Lift on hover transitions */
+.kpi-card-hoverable {
+  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+.kpi-card-hoverable:hover {
+  transform: translateY(-4px) !important;
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.08) !important;
+}
+.fuel-tank-card {
+  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+.fuel-tank-card:hover {
+  transform: translateY(-4px) !important;
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.08) !important;
+}
+
+/* Beautiful Circular Icons with Accent themes */
+.kpi-icon-purple {
+  background: rgba(139, 92, 246, 0.1) !important;
+  color: #8b5cf6 !important;
+  border: 1px solid rgba(139, 92, 246, 0.15) !important;
+}
+.kpi-icon-danger {
+  background: rgba(239, 68, 68, 0.1) !important;
+  color: #ef4444 !important;
+  border: 1px solid rgba(239, 68, 68, 0.15) !important;
+}
+.kpi-icon-warning {
+  background: rgba(245, 158, 11, 0.1) !important;
+  color: #f59e0b !important;
+  border: 1px solid rgba(245, 158, 11, 0.15) !important;
+}
+.kpi-icon-success {
+  background: rgba(16, 185, 129, 0.1) !important;
+  color: #10b981 !important;
+  border: 1px solid rgba(16, 185, 129, 0.15) !important;
+}
+.kpi-icon-emerald {
+  background: rgba(5, 150, 105, 0.1) !important;
+  color: #059669 !important;
+  border: 1px solid rgba(5, 150, 105, 0.15) !important;
+}
+.kpi-icon-info {
+  background: rgba(6, 182, 212, 0.1) !important;
+  color: #06b6d4 !important;
+  border: 1px solid rgba(6, 182, 212, 0.15) !important;
+}
+.kpi-icon-primary {
+  background: rgba(59, 130, 246, 0.1) !important;
+  color: #3b82f6 !important;
+  border: 1px solid rgba(59, 130, 246, 0.15) !important;
+}
+.kpi-icon-blue {
+  background: rgba(37, 99, 235, 0.1) !important;
+  color: #2563eb !important;
+  border: 1px solid rgba(37, 99, 235, 0.15) !important;
+}
+
+/* Custom Responsive Design Rules for Mobile, Tablet, and Desktop */
+@media (max-width: 1024px) {
+  .dashboard-split {
+    grid-template-columns: 1fr !important;
+  }
+  .app-sidebar {
+    display: none !important;
+  }
+}
+
+@media (max-width: 768px) {
+  .top-header {
+    height: auto !important;
+    padding: 16px !important;
+    flex-direction: column !important;
+    gap: 12px !important;
+    align-items: center !important;
+  }
+  
+  .header-search {
+    width: 100% !important;
+    justify-content: center !important;
+  }
+  
+  .live-status-container {
+    width: 100% !important;
+    justify-content: center !important;
+  }
+  
+  .header-actions {
+    width: 100% !important;
+    justify-content: center !important;
+    flex-wrap: wrap !important;
+  }
+  
+  .dashboard-content {
+    padding: 0 12px 140px !important; /* Bottom padding to clear the PWA mobile navigation bar */
+  }
+  
+  .smart-alerts-banner {
+    padding: 16px !important;
+    border-radius: 16px !important;
+    margin-bottom: 20px !important;
+  }
+  
+  .section-header {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 12px !important;
+  }
+  
+  .dashboard-filters-panel {
+    width: 100% !important;
+    justify-content: space-between !important;
+  }
+  
+  .dashboard-charts-grid {
+    grid-template-columns: 1fr !important;
+  }
+  
+  .chart-card {
+    padding: 16px !important;
+    border-radius: 16px !important;
+  }
 }
 
 
