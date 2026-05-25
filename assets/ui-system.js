@@ -285,7 +285,6 @@ window.AppUI = (() => {
           <label>نسبة الفاقد %<input name="lossPercentage" type="number" value="${r.water.lossPercentage || ''}"></label>
           <label>المعبأ للجهات<input name="filledWater" type="number" value="${r.water.filledWater || ''}" readonly></label>
           <label>عدد السيارات<input name="carsCount" type="number" value="${r.water.carsCount || ''}" readonly></label>
-          <label>متوسط السيارة<input name="averagePerCar" type="number" value="${r.water.averagePerCar || ''}" readonly></label>
           <label class="wide">ملاحظات المياه<textarea name="waterNotes">${esc(r.water.notes || '')}</textarea></label>
         </section>
         
