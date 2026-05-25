@@ -1,44 +1,74 @@
 rules_version = '2';
-
 service cloud.firestore {
   match /databases/{database}/documents {
-    // التقارير والبيانات — قراءة مفتوحة، كتابة للمصادقين فقط
-    match /reports/{docId} {
-      allow read: if true;
-      allow write: if request.auth != null;
+
+    // ==========================================
+    // SECURITY HELPER FUNCTIONS
+    // ==========================================
+
+    // Helper: Safely retrieves user's role.
+    // BUG FIX: Added exists() guard. Accessing '.data.role' directly on a non-existent document
+    // throws a runtime rules evaluation crash, causing unexpected rejections.
+    function getRole() {
+      let path = /databases/$(database)/documents/users/$(request.auth.uid);
+      return exists(path) ? get(path).data.role : 'operator';
     }
 
-    // الوقود الوارد — قراءة مفتوحة، كتابة للمصادقين فقط
+    // Helper: Checks if the authenticated user is a verified system admin
+    function isAdmin() {
+      return request.auth != null && getRole() == 'admin';
+    }
+
+    // ==========================================
+    // COLLECTION ACCESS RULES
+    // ==========================================
+
+    // User Profiles RBAC Security
+    match /users/{userId} {
+      allow read: if request.auth != null;
+      // Users can only write their own profile document (e.g. on registration) unless Admin
+      allow write: if request.auth != null && (request.auth.uid == userId || isAdmin());
+    }
+
+    // Reports Security
+    match /reports/{reportId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null;
+      // Only Admins can modify/delete past historical water pumping reports
+      allow update, delete: if isAdmin();
+    }
+
+    // Fuel Entries Security
     match /fuelEntries/{docId} {
-      allow read: if true;
-      allow write: if request.auth != null;
+      allow read: if request.auth != null;
+      allow create: if request.auth != null;
+      allow update, delete: if isAdmin();
     }
 
-    // الإعدادات — قراءة مفتوحة، كتابة للمصادقين فقط
+    // System Constant Settings Security
     match /settings/{docId} {
-      allow read: if true;
-      allow write: if request.auth != null;
+      allow read: if request.auth != null;
+      allow write: if isAdmin();
     }
 
-    // المحطات — قراءة مفتوحة، كتابة للمصادقين فقط
+    // Water Pump Station Infrastructure Security
     match /stations/{docId} {
-      allow read: if true;
-      allow write: if request.auth != null;
+      allow read: if request.auth != null;
+      allow write: if isAdmin();
     }
 
-    // سجلات النشاط — للمصادقين فقط
+    // Activity Logs System Auditing Security
+    // AUDIT VULNERABILITY PATCH: Changed to read/create only.
+    // Audit logs MUST be append-only! Allowing 'write' (which covers update/delete)
+    // allows a compromised account or malicious operator to alter or delete logs to hide their actions.
     match /activityLogs/{docId} {
-      allow read, write: if request.auth != null;
+      allow read, create: if request.auth != null;
+      allow update, delete: if false; // Audit timelines are immutable
     }
 
-    // تفضيلات المستخدم (الثيم وغيره) — للمصادقين فقط
+    // User Preferences Security (Themes, layout views)
     match /userPreferences/{docId} {
-      allow read, write: if request.auth != null;
-    }
-
-    // المستخدمين والصلاحيات
-    match /users/{docId} {
-      allow read, write: if request.auth != null;
+      allow read, write: if request.auth != null && (request.auth.uid == docId || isAdmin());
     }
   }
 }

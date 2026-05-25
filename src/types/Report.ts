@@ -1,50 +1,73 @@
-// Types for Water Report System
+// Types for Water Pumping & Operation Dashboard
 
-export interface GeneratorData {
-  startTime: string; // HH:mm format
-  stopTime: string; // HH:mm format
-  operatingHours: number; // Calculated automatically
+export interface SystemSettings {
+  submersibleProductionPerHour: number;
+  filteredProductionPerHour: number;
+  defaultStationName: string;
+  updatedAt?: any;
+}
+
+export interface Beneficiary {
+  agencyName: string;
+  quantity: number;
+  numberOfCars: number;
+}
+
+export interface LabTests {
+  phDesalination: number; // PH after desalination (بعد التحلية)
+  phSubmersible: number;  // PH submersible (مياه الغاطس)
+  tdsDesalinated: number; // TDS desalinated (مياه محلاة)
+  tdsWell: number;        // TDS well (بئر مياه)
+  tdsWaste: number;       // TDS waste (عادم)
+  freeChlorine: number;   // Free Chlorine (الكلور الحر)
+}
+
+export interface GeneratorOperation {
+  startTime: string; // "HH:MM"
+  endTime: string;   // "HH:MM"
+  operatingHours: number; // Decimal hours, e.g., 2.5
+  formattedOperatingHours: string; // "HH:MM" format
 }
 
 export interface FuelData {
-  previousBalance: number; // كمية السولار المتبقية من التقرير السابق
-  fuelAdded: number; // السولار المضاف اليوم
-  fuelConsumptionPerHour: number; // استهلاك السولار في الساعة
-  totalAvailable: number; // المخزون الكلي المتاح
-  fuelConsumed: number; // Calculated: operatingHours * fuelConsumptionPerHour
-  remainingBalance: number; // Calculated: totalAvailable - fuelConsumed
+  addedFuel: number;                // المضاف يومياً
+  consumedFuel: number;             // المستهلك يومياً
+  suppliedFromMunicipality: number; // المورد من البلدية
+  previousBalance: number;          // الرصيد السابق
+  currentBalance: number;           // الرصيد الحالي
 }
 
-export interface WaterData {
-  pumpProduction: number; // إجمالي انتاج الغاطس في اليوم (كوب/ساعة × عدد الساعات)
-  desaltedWater: number; // Calculated: pumpProduction - wasteWater
-  wasteWater: number; // كمية المياه العادمة
+export interface WaterQuantities {
+  totalWaterIn: number;     // calculated: operatingHours * submersibleProductionPerHour
+  dailyProduction: number;  // calculated: operatingHours * filteredProductionPerHour
+  wasteWater: number;       // calculated: totalWaterIn - dailyProduction
+  recoveryRate: number;     // calculated %: (dailyProduction / totalWaterIn) * 100
+  wasteRate: number;        // calculated %: 100 - recoveryRate
 }
 
-export interface ReportData {
-  id: string;
+export interface DailyReport {
+  id?: string;
   date: string;
-  station: string;
-  operator: string;
-  generator: GeneratorData;
+  stationName: string;
+  generator: GeneratorOperation;
   fuel: FuelData;
-  water: WaterData;
-  beneficiaries: BeneficiaryData[];
-  waterTests: WaterTestData;
-  createdAt: string;
-  updatedAt: string;
+  labTests: LabTests;
+  beneficiaries: Beneficiary[];
+  waterQuantities: WaterQuantities;
+  beneficiariesTotals: {
+    totalQuantity: number;
+    totalCars: number;
+  };
+  createdAt?: any;
+  updatedAt?: any;
 }
 
-export interface BeneficiaryData {
-  id: string;
-  name: string;
-  quantity: number;
-  vehicles: number;
+export type UserRole = 'admin' | 'operator';
+
+export interface UserProfile {
+  uid: string;
+  username: string;
+  role: UserRole;
+  stationName?: string;
 }
 
-export interface WaterTestData {
-  ph: number;
-  tds: number;
-  chlorine: number;
-  turbidity: number;
-}
