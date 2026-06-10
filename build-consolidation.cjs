@@ -179,12 +179,12 @@ const htmlContent = `<!doctype html>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&display=swap" rel="stylesheet">
-  <script>window.WATER_APP_BUILD = '20260523-clean-v2';</script>
+  <script>window.WATER_APP_BUILD = '20260610-clean-v3';</script>
   
   <!-- CSS Modules -->
-  <link rel="stylesheet" href="assets/theme.css?v=20260523-clean-v2">
-  <link rel="stylesheet" href="assets/layout.css?v=20260523-clean-v2">
-  <link rel="stylesheet" href="assets/components.css?v=20260523-clean-v2">
+  <link rel="stylesheet" href="assets/theme.css?v=20260610-clean-v3">
+  <link rel="stylesheet" href="assets/layout.css?v=20260610-clean-v3">
+  <link rel="stylesheet" href="assets/components.css?v=20260610-clean-v3">
 </head>
 <body>
   <div id="app"></div>
@@ -196,13 +196,13 @@ const htmlContent = `<!doctype html>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
   <!-- JS Modules -->
-  <script src="assets/core-system.js?v=20260523-clean-v2"></script>
-  <script src="assets/auth-system.js?v=20260523-clean-v2"></script>
-  <script src="assets/ui-system.js?v=20260523-clean-v2"></script>
-  <script src="assets/reports-system.js?v=20260523-clean-v2"></script>
-  <script src="assets/fuel-system.js?v=20260523-clean-v2"></script>
-  <script src="assets/export-system.js?v=20260523-clean-v2"></script>
-  <script src="assets/main-app.js?v=20260523-clean-v2"></script>
+  <script src="assets/core-system.js?v=20260610-clean-v3"></script>
+  <script src="assets/auth-system.js?v=20260610-clean-v3"></script>
+  <script src="assets/ui-system.js?v=20260610-clean-v3"></script>
+  <script src="assets/reports-system.js?v=20260610-clean-v3"></script>
+  <script src="assets/fuel-system.js?v=20260610-clean-v3"></script>
+  <script src="assets/export-system.js?v=20260610-clean-v3"></script>
+  <script src="assets/main-app.js?v=20260610-clean-v3"></script>
 </body>
 </html>`;
 
