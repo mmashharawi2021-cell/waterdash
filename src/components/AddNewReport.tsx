@@ -18,7 +18,7 @@ import {
   TrendingUp,
   Percent
 } from 'lucide-react';
-import { fetchSystemSettings, fetchPreviousBalance, saveDailyReport } from '../utils/firebase';
+import { fetchSystemSettings, fetchPreviousBalance, saveDailyReport, fetchFuelEntries } from '../utils/firebase';
 import { reportValidationSchema, calculateHours } from '../utils/validationSchema';
 import type { DailyReport } from '../types/Report';
 
@@ -30,6 +30,7 @@ interface AddNewReportProps {
 export const AddNewReport: React.FC<AddNewReportProps> = ({ onBack, onSuccess }) => {
   const [loadingSettings, setLoadingSettings] = useState<boolean>(true);
   const [loadingPrevBalance, setLoadingPrevBalance] = useState<boolean>(false);
+  const [loadingFuelEntries, setLoadingFuelEntries] = useState<boolean>(false);
   const [submitting, setSubmitting] = useState<boolean>(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   
@@ -91,22 +92,41 @@ export const AddNewReport: React.FC<AddNewReportProps> = ({ onBack, onSuccess })
     loadSettings();
   }, []);
 
-  // Fetch Previous Balance on Date change
+  // Fetch Previous Balance and Fuel Entries on Date change
   useEffect(() => {
-    async function loadBalance() {
+    async function loadFuelData() {
       if (!date) return;
       setLoadingPrevBalance(true);
+      setLoadingFuelEntries(true);
       try {
-        const balance = await fetchPreviousBalance(date);
+        const [balance, entries] = await Promise.all([
+          fetchPreviousBalance(date),
+          fetchFuelEntries(date)
+        ]);
         setPreviousBalance(balance);
+        
+        let added = 0;
+        let supplied = 0;
+        entries.forEach(entry => {
+          if (entry.source === 'municipality') {
+            supplied += entry.quantity;
+          } else {
+            added += entry.quantity;
+          }
+        });
+        setAddedFuel(String(added));
+        setSuppliedFromMunicipality(String(supplied));
       } catch (err) {
-        console.error("Failed to load previous balance", err);
+        console.error("Failed to load fuel data", err);
         setPreviousBalance(0);
+        setAddedFuel('0');
+        setSuppliedFromMunicipality('0');
       } finally {
         setLoadingPrevBalance(false);
+        setLoadingFuelEntries(false);
       }
     }
-    loadBalance();
+    loadFuelData();
   }, [date]);
 
   // Toast notifier
@@ -501,10 +521,10 @@ export const AddNewReport: React.FC<AddNewReportProps> = ({ onBack, onSuccess })
                 <h3 className="text-lg font-bold text-white">بيانات وجرد وقود السولار (Fuel Liters)</h3>
               </div>
               
-              {loadingPrevBalance && (
+              {(loadingPrevBalance || loadingFuelEntries) && (
                 <div className="flex items-center gap-2 text-sky-400 text-xs font-semibold">
                   <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                  <span>جاري تحديث الرصيد السابق...</span>
+                  <span>جاري تحديث بيانات الوقود...</span>
                 </div>
               )}
             </div>
@@ -526,11 +546,9 @@ export const AddNewReport: React.FC<AddNewReportProps> = ({ onBack, onSuccess })
                 <input
                   type="number"
                   value={addedFuel}
-                  onChange={(e) => setAddedFuel(e.target.value)}
+                  readOnly
                   placeholder="0"
-                  className={`w-full bg-[#161b30]/60 border rounded-2xl py-3.5 px-4 text-white focus:outline-none focus:ring-4 focus:ring-sky-500/10 font-bold transition-all ${
-                    errors['fuel.addedFuel'] ? 'border-rose-500 focus:border-rose-500' : 'border-white/10 focus:border-sky-500'
-                  }`}
+                  className="w-full bg-white/5 border border-white/5 rounded-2xl py-3.5 px-4 text-gray-400 font-bold cursor-not-allowed focus:outline-none"
                   min="0"
                   step="0.1"
                 />
@@ -545,11 +563,9 @@ export const AddNewReport: React.FC<AddNewReportProps> = ({ onBack, onSuccess })
                 <input
                   type="number"
                   value={suppliedFromMunicipality}
-                  onChange={(e) => setSuppliedFromMunicipality(e.target.value)}
+                  readOnly
                   placeholder="0"
-                  className={`w-full bg-[#161b30]/60 border rounded-2xl py-3.5 px-4 text-white focus:outline-none focus:ring-4 focus:ring-sky-500/10 font-bold transition-all ${
-                    errors['fuel.suppliedFromMunicipality'] ? 'border-rose-500 focus:border-rose-500' : 'border-white/10 focus:border-sky-500'
-                  }`}
+                  className="w-full bg-white/5 border border-white/5 rounded-2xl py-3.5 px-4 text-gray-400 font-bold cursor-not-allowed focus:outline-none"
                   min="0"
                   step="0.1"
                 />
@@ -577,6 +593,13 @@ export const AddNewReport: React.FC<AddNewReportProps> = ({ onBack, onSuccess })
                 )}
               </div>
 
+            </div>
+
+            <div className="bg-amber-500/5 border border-amber-500/10 p-4 rounded-2xl flex items-center gap-3 text-xs text-amber-400 font-medium leading-relaxed">
+              <Flame className="w-5 h-5 shrink-0" />
+              <span>
+                💡 **ملاحظة:** يتم حساب "السولار المضاف" و"المورد من البلدية" تلقائياً بناءً على سجلات توريد السولار لهذا اليوم. لإدخال كميات سولار جديدة مضافة، يرجى استخدام صفحة **إدارة واردات السولار** من القائمة الجانبية.
+              </span>
             </div>
 
             {/* Read-Only computed balance alert */}

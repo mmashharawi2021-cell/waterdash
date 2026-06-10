@@ -71,3 +71,14 @@ export interface UserProfile {
   stationName?: string;
 }
 
+export interface FuelEntry {
+  id?: string;
+  date: string;
+  quantity: number;
+  source: 'municipality' | 'purchased' | 'other';
+  notes: string;
+  createdAt?: any;
+  updatedAt?: any;
+}
+
+

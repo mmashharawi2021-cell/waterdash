@@ -14,7 +14,7 @@ import {
   serverTimestamp 
 } from 'firebase/firestore';
 import { getAuth, signInAnonymously } from 'firebase/auth';
-import type { SystemSettings, DailyReport, UserProfile } from '../types/Report';
+import type { SystemSettings, DailyReport, UserProfile, FuelEntry } from '../types/Report';
 
 const firebaseConfig = {
   apiKey: "AIzaSyDSutT8QUKJDV756T3dzYD915BDS4k2Iw8",
@@ -204,3 +204,61 @@ export async function fetchAllReports(): Promise<DailyReport[]> {
     return [];
   }
 }
+
+// --- Fuel Entries CRUD Operations ---
+
+export async function fetchFuelEntries(date?: string): Promise<FuelEntry[]> {
+  await ensureAuthenticated();
+  const fuelRef = collection(db, 'fuelEntries');
+  try {
+    let q;
+    if (date) {
+      q = query(fuelRef, where('date', '==', date));
+    } else {
+      q = query(fuelRef, orderBy('date', 'desc'));
+    }
+    const snapshot = await getDocs(q);
+    const entries = snapshot.docs.map(doc => {
+      const data = doc.data();
+      return {
+        id: doc.id,
+        ...data,
+      } as FuelEntry;
+    });
+    
+    // Sort in memory by date desc, then by createdAt seconds desc
+    entries.sort((a, b) => {
+      const dateA = a.date || '';
+      const dateB = b.date || '';
+      if (dateA !== dateB) return dateB.localeCompare(dateA);
+      
+      const timeA = a.createdAt?.seconds || 0;
+      const timeB = b.createdAt?.seconds || 0;
+      return timeB - timeA;
+    });
+    
+    return entries;
+  } catch (err) {
+    console.error("Error fetching fuel entries", err);
+    return [];
+  }
+}
+
+export async function saveFuelEntry(entry: FuelEntry): Promise<string> {
+  await ensureAuthenticated();
+  const fuelRef = collection(db, 'fuelEntries');
+  const docRef = await addDoc(fuelRef, {
+    ...entry,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp()
+  });
+  return docRef.id;
+}
+
+export async function deleteFuelEntry(entryId: string): Promise<void> {
+  await ensureAuthenticated();
+  const docRef = doc(db, 'fuelEntries', entryId);
+  const { deleteDoc } = await import('firebase/firestore');
+  await deleteDoc(docRef);
+}
+

@@ -213,8 +213,9 @@ window.AppUI = (() => {
   }
 
   function reportForm(state, settings = {}) {
-    const r = state.draft || window.ReportUtils.recalc(window.ReportUtils.emptyReport());
-    const step = state.formStep || 1;
+    const r = (state && (state.draft || (state.generator || state.reportDate ? state : null))) || window.ReportUtils.recalc(window.ReportUtils.emptyReport());
+    const step = state.formStep || window.App?.state?.formStep || 1;
+    const editingId = state.editingId || window.App?.state?.editingId || null;
     const templates = settings.beneficiaries || [];
     const templateChips = templates.map(name => `<button class="template-chip" type="button" onclick="App.addBeneficiaryTemplate('${esc(name).replace(/'/g, '&#039;')}')">+ ${esc(name)}</button>`).join('');
     const bRows = (r.beneficiaries || []).map((b, i) => `<tr><td><input data-b="name" data-i="${i}" value="${esc(b.name)}" list="beneficiaryTemplateList"></td><td><input data-b="quantity" data-i="${i}" type="number" value="${b.quantity || ''}" placeholder="كوب"></td><td><input data-b="cars" data-i="${i}" type="number" value="${b.cars || ''}" placeholder="سيارة"></td><td><input data-b="notes" data-i="${i}" value="${esc(b.notes || '')}"></td><td><button class="mini danger" onclick="App.removeBeneficiary(${i})" type="button">حذف</button></td></tr>`).join('');
@@ -224,7 +225,7 @@ window.AppUI = (() => {
         <div class="wizard-title">
           <span>📋</span>
           <div>
-            <h2>${state.editingId ? 'تعديل التقرير' : 'إضافة تقرير جديد'}</h2>
+            <h2>${editingId ? 'تعديل التقرير' : 'إضافة تقرير جديد'}</h2>
             <p>الرجاء تعبئة بيانات التقرير بالخطوات التالية.</p>
           </div>
         </div>
@@ -719,7 +720,7 @@ window.AppUI = (() => {
         </header>
 
         <div class="dashboard-content">
-          ${state.view === 'form' ? window.AppUI.reportForm(state, settings) : `
+          ${state.view === 'form' ? `<div id="formHost">${window.AppUI.reportForm(state.draft || state, settings)}</div>` : `
           <div id="dashboard-tab-content" style="display: ${state.view === 'home' ? 'block' : 'none'};">
             
             <!-- Glassmorphism Smart Alerts Banner -->

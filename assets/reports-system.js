@@ -190,7 +190,16 @@ window.ReportUtils = (() => {
     const raw = normalizeArabicDigits(value).trim();
     if (!raw) return '';
     if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
-    const m = raw.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/);
+
+    let m = raw.match(/^(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})$/);
+    if (m) {
+      const year = m[1];
+      const month = String(Number(m[2])).padStart(2, '0');
+      const day = String(Number(m[3])).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    }
+
+    m = raw.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/);
     if (!m) return raw;
     const day = String(Number(m[1])).padStart(2, '0');
     const month = String(Number(m[2])).padStart(2, '0');
