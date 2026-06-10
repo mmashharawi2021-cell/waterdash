@@ -259,6 +259,7 @@ window.AppUI = (() => {
           <label>وقت التشغيل<input name="generatorStart" type="time" value="${r.generator.periods?.[0]?.startTime || ''}"></label>
           <label>وقت الإيقاف<input name="generatorEnd" type="time" value="${r.generator.periods?.[0]?.stopTime || ''}"></label>
           <label>ساعات التشغيل<input name="totalRunHours" value="${r.generator.totalRunHours || ''}"></label>
+          <label>الوقود المستهلك (لتر)<input name="fuelConsumed" type="number" value="${r.fuel.consumedDaily || ''}"></label>
           <label>حالة المولد<input name="generatorStatus" value="${esc(r.generator.status || '')}"></label>
           <label>مشغل المولد<input name="generatorOperator" value="${esc(r.generator.operatorName || '')}"></label>
           <label class="wide">ملاحظات المولد<textarea name="generatorNotes">${esc(r.generator.notes || '')}</textarea></label>
@@ -536,13 +537,13 @@ window.AppUI = (() => {
     });
 
     const incoming = uniqueRaw.filter(x => x.type !== 'consumed').reduce((s, x) => s + n(x.quantityLiters ?? x.quantity), 0);
-    const consumed = uniqueRaw.filter(x => x.type === 'consumed').reduce((s, x) => s + n(x.quantityLiters ?? x.quantity), 0);
+    const consumed = list.reduce((s, r) => s + n(r.fuel?.consumedDaily), 0);
     
     data.fuelConsumed = consumed;
     data.fuelSupplied = incoming;
     data.stock = incoming - consumed;
     
-    const latestEntry = [...uniqueRaw].sort((a, b) => String(b.date).localeCompare(String(a.date)))[0];
+    const latestEntry = [...uniqueRaw].filter(x => x.type !== 'consumed').sort((a, b) => String(b.date).localeCompare(String(a.date)))[0];
     data.stockDate = latestEntry ? latestEntry.date : '';
     
     return data;

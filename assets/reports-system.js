@@ -180,7 +180,7 @@ window.ReportUtils = (() => {
 
   const original = window.ReportUtils;
 
-  function getFuelStatsForDate(date) {
+  function getFuelStatsForDate(date, excludeReportId = null, currentConsumed = 0) {
     const raw = window.WaterFuelRawEntries;
     if (!Array.isArray(raw)) {
       return null;
@@ -194,49 +194,39 @@ window.ReportUtils = (() => {
       unique.push(item);
     });
     
-    const sorted = [...unique].sort((a, b) => a.date.localeCompare(b.date));
+    // Sum incoming fuel from fuelEntries
+    let incomingBefore = 0;
+    let incomingOnDate = 0;
+    unique.forEach(entry => {
+      if (entry.type === 'consumed') return; // Only count incoming fuel supply here
+      const qty = Number(entry.quantityLiters || entry.quantity || 0);
+      if (entry.date < date) {
+        incomingBefore += qty;
+      } else if (entry.date === date) {
+        incomingOnDate += qty;
+      }
+    });
+
+    // Sum consumed fuel from reports
+    const reportsList = window.App?.state?.reports || [];
+    let consumedBefore = 0;
+    reportsList.forEach(other => {
+      if (other.id !== excludeReportId && other.reportDate && other.reportDate < date) {
+        consumedBefore += Number(other.fuel?.consumedDaily || 0);
+      }
+    });
     
-    let stats = {
-      addedDaily: 0,
+    const previousBalance = incomingBefore - consumedBefore;
+    const currentBalance = previousBalance + incomingOnDate - currentConsumed;
+    
+    return {
+      addedDaily: incomingOnDate,
+      consumedDaily: currentConsumed,
       municipalSupplied: 0,
-      consumedDaily: 0,
-      previousBalance: 0,
-      currentBalance: 0,
+      previousBalance: previousBalance,
+      currentBalance: currentBalance,
       loss: 0
     };
-    
-    sorted.forEach(entry => {
-      const qty = Number(entry.quantityLiters || entry.quantity || 0);
-      const isConsumed = entry.type === 'consumed';
-      
-      if (entry.date === date) {
-        if (isConsumed) {
-          stats.consumedDaily += qty;
-        } else {
-          if (entry.source === 'municipality' || String(entry.supplier || '').includes('بلدية') || String(entry.fillingMethod || '').includes('بلدية')) {
-            stats.municipalSupplied += qty;
-          } else {
-            stats.addedDaily += qty;
-          }
-        }
-      }
-    });
-    
-    let balAtDate = 0;
-    sorted.forEach(entry => {
-      if (entry.date <= date) {
-        const qty = Number(entry.quantityLiters || entry.quantity || 0);
-        if (entry.type === 'consumed') {
-          balAtDate -= qty;
-        } else {
-          balAtDate += qty;
-        }
-      }
-    });
-    
-    stats.currentBalance = balAtDate;
-    stats.previousBalance = balAtDate - (stats.addedDaily + stats.municipalSupplied) + stats.consumedDaily;
-    return stats;
   }
 
   function normalizeArabicDigits(value) {
@@ -344,15 +334,16 @@ window.ReportUtils = (() => {
     r.generator = r.generator || { periods: [] };
     r.fuel = r.fuel || {};
     
-    const stats = getFuelStatsForDate(r.reportDate);
+    const currentConsumed = Number(r.fuel?.consumedDaily || 0);
+    const stats = getFuelStatsForDate(r.reportDate, r.id, currentConsumed);
     if (stats !== null) {
       r.fuel = {
-        addedDaily: stats.addedDaily || '',
-        consumedDaily: stats.consumedDaily || '',
-        municipalSupplied: stats.municipalSupplied || '',
-        previousBalance: stats.previousBalance || '',
-        currentBalance: stats.currentBalance || '',
-        loss: stats.loss || '',
+        addedDaily: stats.addedDaily || 0,
+        consumedDaily: stats.consumedDaily || 0,
+        municipalSupplied: 0,
+        previousBalance: stats.previousBalance || 0,
+        currentBalance: stats.currentBalance || 0,
+        loss: 0,
         notes: r.fuel?.notes || '',
         extraFields: r.fuel?.extraFields || []
       };
