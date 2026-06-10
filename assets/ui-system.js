@@ -705,8 +705,10 @@ window.AppUI = (() => {
        visibleReports = visibleReports.filter(r => window.WaterDataQualityPro.classify(r).critical > 0);
     }
 
-    const fuelPct = Math.min(Math.round((s.stock / 1000) * 100), 100) || 0;
+    const rawFuelPct = Math.round((s.stock / 1000) * 100);
+    const fuelPct = Math.max(0, Math.min(rawFuelPct, 100));
     const isCritical = s.stock < 200;
+    const isNegativeStock = s.stock < 0;
 
     return `<div class="dashboard-layout">
       ${sidebarMenu(reports.length, active)}
@@ -797,17 +799,17 @@ window.AppUI = (() => {
                         <rect x="1" y="8.5" width="58" height="73" rx="7" ry="7"></rect>
                       </clipPath>
                       <!-- Dynamic height of liquid -->
-                      <rect x="0" y="${82 - (74 * (fuelPct/100))}" width="60" height="${74 * (fuelPct/100)}" fill="${isCritical ? '#ef4444' : '#10b981'}" style="transition: all 1s ease-in-out; opacity: 0.75; animation: ${isCritical ? 'pulse-fuel-liquid 1.2s infinite alternate' : 'none'};"></rect>
+                      <rect x="0" y="${82 - (74 * (fuelPct/100))}" width="60" height="${Math.max(0, 74 * (fuelPct/100))}" fill="${isNegativeStock ? '#7f1d1d' : isCritical ? '#ef4444' : '#10b981'}" style="transition: all 1s ease-in-out; opacity: 0.75; animation: ${isCritical && !isNegativeStock ? 'pulse-fuel-liquid 1.2s infinite alternate' : 'none'};"></rect>
                       <!-- Wave effect on top of liquid -->
-                      <ellipse cx="30" cy="${82 - (74 * (fuelPct/100))}" rx="30" ry="4" fill="${isCritical ? '#f87171' : '#34d399'}" style="transition: all 1s ease-in-out;"></ellipse>
+                      <ellipse cx="30" cy="${fuelPct > 0 ? 82 - (74 * (fuelPct/100)) : 82}" rx="30" ry="4" fill="${isNegativeStock ? '#450a0a' : isCritical ? '#f87171' : '#34d399'}" style="transition: all 1s ease-in-out; display: ${fuelPct <= 0 ? 'none' : 'block'};"></ellipse>
                     </g>
                   </svg>
-                  <div class="tank-label" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 10px; font-weight: 800; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,0.6);">${fuelPct}%</div>
+                  <div class="tank-label" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 10px; font-weight: 800; color: ${isNegativeStock ? '#fca5a5' : '#fff'}; text-shadow: 0 1px 3px rgba(0,0,0,0.6);">${isNegativeStock ? '⚠' : fuelPct + '%'}</div>
                 </div>
                 <div class="kpi-details">
                   <span>مؤشر رصيد السولار</span>
                   <strong>${s.stock ? fmt(s.stock) : '_'} لتر</strong>
-                  <small style="color: ${isCritical ? '#ef4444' : 'var(--text-muted)'}; font-weight: ${isCritical ? 'bold' : 'normal'}; animation: ${isCritical ? 'blink-text 1.2s infinite' : 'none'};">${isCritical ? '⚠️ رصيد منخفض! اطلب سولار' : `رصيد السولار الاحتياطي`}</small>
+                  <small style="color: ${isNegativeStock ? '#ef4444' : isCritical ? '#ef4444' : 'var(--text-muted)'}; font-weight: ${isCritical || isNegativeStock ? 'bold' : 'normal'}; animation: ${isCritical || isNegativeStock ? 'blink-text 1.2s infinite' : 'none'};">${isCritical ? '⚠️ رصيد منخفض! اطلب سولار' : `رصيد السولار الاحتياطي`}</small>
                 </div>
               </div>
             </section>
