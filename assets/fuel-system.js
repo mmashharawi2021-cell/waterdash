@@ -229,16 +229,39 @@
   }
 
   function ensureFuelSection() {
-    const stats = document.querySelector('.stats.dashboard-totals');
-    if (!stats) return;
     let section = document.getElementById('incomingFuelSection');
     if (!section) {
+      const stats = document.querySelector('.stats.dashboard-totals');
+      const charts = document.querySelector('.dashboard-charts-grid');
+      const mainContent = document.querySelector('.dashboard-content') || document.querySelector('.app-shell');
+      if (!stats && !charts && !mainContent) return;
+
       section = document.createElement('section');
       section.id = 'incomingFuelSection';
       section.className = 'incoming-fuel-section';
-      stats.insertAdjacentElement('afterend', section);
+      section.style.marginTop = '32px';
+
+      if (stats) {
+        stats.insertAdjacentElement('afterend', section);
+      } else if (charts) {
+        charts.insertAdjacentElement('afterend', section);
+      } else if (mainContent) {
+        mainContent.appendChild(section);
+      }
     }
-    renderFuelSection();
+    
+    // Toggle visibility based on state view
+    const appState = window.App?.state;
+    if (appState && appState.view !== 'home') {
+      section.style.display = 'none';
+    } else {
+      section.style.display = 'block';
+      if (typeof renderStableFuelSection === 'function') {
+        renderStableFuelSection();
+      } else {
+        renderFuelSection();
+      }
+    }
   }
 
   function renderFuelSection() {

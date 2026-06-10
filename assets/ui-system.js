@@ -650,6 +650,7 @@ window.AppUI = (() => {
         ${button('viewReports', `<button id="nav-home" class="nav-item ${state.view === 'home' ? 'active' : ''}" onclick="App.goHome()"><i class="icon">📊</i><span>لوحة البيانات</span></button>`)}
         ${button('viewReports', `<button id="nav-reports" class="nav-item ${state.view === 'reports' ? 'active' : ''}" onclick="App.goReports()"><i class="icon">📋</i><span>سجل التقارير <b class="badge">${reportsLength}</b></span></button>`)}
         ${button('createReports', `<button id="nav-form" class="nav-item highlight ${state.view === 'form' ? 'active' : ''}" onclick="App.openNew()"><i class="icon">➕</i><span>إضافة تقرير</span></button>`)}
+        ${button('createReports', `<button id="nav-fuel" class="nav-item" onclick="WaterFuel.openFuelModal()"><i class="icon">⛽</i><span>إضافة سولار</span></button>`)}
         ${button('exportExcel', `<button id="nav-export" class="nav-item ${state.view === 'export' ? 'active' : ''}" onclick="App.goExport()"><i class="icon">📥</i><span>تصدير مخصص</span></button>`)}
 
         <p class="nav-section-title">الإدارة</p>
