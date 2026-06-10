@@ -664,42 +664,52 @@ window.AppUI = (() => {
 
   function fuelLogView() {
     const entries = Array.isArray(window.WaterFuelRawEntries) ? window.WaterFuelRawEntries : [];
-    const n = v => { const x = Number(String(v ?? '').replace(',', '.').replace(/[^0-9.\-]/g, '')); return Number.isFinite(x) ? x : 0; };
-    const f = v => { const x = n(v); return Number.isInteger(x) ? String(x) : x.toFixed(2); };
+    const reports = Array.isArray(window.App?.state?.reports) ? window.App.state.reports : [];
+    const num = v => { const x = Number(String(v ?? '').replace(',', '.').replace(/[^0-9.\-]/g, '')); return Number.isFinite(x) ? x : 0; };
+    const f = v => { const x = num(v); return Number.isInteger(x) ? String(x) : x.toFixed(2); };
 
-    const incoming = entries.filter(e => e.type !== 'consumed').reduce((s, e) => s + n(e.quantityLiters), 0);
-    const consumed = entries.filter(e => e.type === 'consumed').reduce((s, e) => s + n(e.quantityLiters), 0);
+    // ✅ الوارد: من إدخالات السولار (fuelEntries) — النوع الوارد فقط
+    const incomingEntries = entries.filter(e => e.type !== 'consumed');
+    const incoming = incomingEntries.reduce((s, e) => s + num(e.quantityLiters), 0);
+
+    // ✅ المستهلك: من تقارير التشغيل اليومية (fuel.consumedDaily)
+    const reportRows = [...reports]
+      .filter(r => num(r.fuel?.consumedDaily) > 0)
+      .sort((a, b) => String(b.reportDate).localeCompare(String(a.reportDate)));
+    const consumed = reportRows.reduce((s, r) => s + num(r.fuel?.consumedDaily), 0);
+
     const balance = incoming - consumed;
     const balColor = balance < 0 ? '#ef4444' : balance < 200 ? '#f59e0b' : '#10b981';
 
-    const sorted = [...entries].sort((a, b) => (`${b.date} ${b.time}`).localeCompare(`${a.date} ${a.time}`));
+    // --- صفوف جدول الوارد (قابل للتعديل/الحذف) ---
+    const sortedIncoming = [...incomingEntries].sort((a, b) =>
+      (`${b.date} ${b.time}`).localeCompare(`${a.date} ${a.time}`)
+    );
 
-    const rows = sorted.map(e => {
-      const isIn = e.type !== 'consumed';
-      const typeBadge = isIn
-        ? `<span style="background:rgba(16,185,129,.15);color:#10b981;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:800;">⬆ وارد</span>`
-        : `<span style="background:rgba(239,68,68,.15);color:#ef4444;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:800;">⬇ مستهلك</span>`;
-      const qty = isIn
-        ? `<span style="color:#10b981;font-weight:800;">+${f(e.quantityLiters)} لتر</span>`
-        : `<span style="color:#ef4444;font-weight:800;">−${f(e.quantityLiters)} لتر</span>`;
-      const detail = isIn
-        ? `${esc(e.supplier || '—')}${e.source === 'municipality' ? ' <small style="color:var(--text-muted)">(بلدية)</small>' : e.source === 'purchased' ? ' <small style="color:var(--text-muted)">(شراء)</small>' : ''}`
-        : `${esc(e.consumedFor || 'المولد')}`;
-      const responsible = isIn ? esc(e.deliveredBy || '—') : esc(e.receivedBy || '—');
-      return `<tr>
+    const incomingRows = sortedIncoming.map(e => `
+      <tr>
         <td data-label="التاريخ"><strong>${esc(e.date)}</strong><br><small style="color:var(--text-muted)">${esc(e.day||'')} ${esc(e.time||'')}</small></td>
-        <td data-label="النوع">${typeBadge}</td>
-        <td data-label="الكمية">${qty}</td>
-        <td data-label="التفاصيل">${detail}</td>
-        <td data-label="المسؤول">${responsible}</td>
+        <td data-label="المورد">${esc(e.supplier || '—')}${e.source === 'municipality' ? ' <small style="color:var(--text-muted)">(بلدية)</small>' : e.source === 'purchased' ? ' <small style="color:var(--text-muted)">(شراء)</small>' : ''}</td>
+        <td data-label="كيفية التعبئة">${esc(e.fillingMethod || '—')}</td>
+        <td data-label="الكمية"><span style="color:#10b981;font-weight:800;">+${f(e.quantityLiters)} لتر</span></td>
+        <td data-label="المسلّم">${esc(e.deliveredBy || '—')}</td>
         <td data-label="الإجراءات">
           <div style="display:flex;gap:6px;">
-            <button class="mini" type="button" onclick="WaterFuel.openFuelModal('${esc(e.id)}')" style="padding:6px 12px;border-radius:10px;border:1px solid rgba(59,130,246,.3);background:rgba(59,130,246,.1);color:#3b82f6;font-size:12px;font-weight:700;cursor:pointer;">✏ تعديل</button>
-            <button class="mini danger" type="button" onclick="WaterFuel.deleteFuelEntry('${esc(e.id)}')" style="padding:6px 12px;border-radius:10px;border:1px solid rgba(239,68,68,.3);background:rgba(239,68,68,.1);color:#ef4444;font-size:12px;font-weight:700;cursor:pointer;">🗑 حذف</button>
+            <button type="button" onclick="WaterFuel.openFuelModal('${esc(e.id)}')" style="padding:6px 12px;border-radius:10px;border:1px solid rgba(59,130,246,.3);background:rgba(59,130,246,.1);color:#3b82f6;font-size:12px;font-weight:700;cursor:pointer;">✏ تعديل</button>
+            <button type="button" onclick="WaterFuel.deleteFuelEntry('${esc(e.id)}')" style="padding:6px 12px;border-radius:10px;border:1px solid rgba(239,68,68,.3);background:rgba(239,68,68,.1);color:#ef4444;font-size:12px;font-weight:700;cursor:pointer;">🗑 حذف</button>
           </div>
         </td>
-      </tr>`;
-    }).join('');
+      </tr>`).join('');
+
+    // --- صفوف جدول المستهلك من التقارير (للعرض فقط) ---
+    const consumedRows = reportRows.map(r => `
+      <tr>
+        <td data-label="التاريخ"><strong>${esc(r.reportDate)}</strong><br><small style="color:var(--text-muted)">${esc(r.title || r.stationName || '—')}</small></td>
+        <td data-label="المحطة/البئر">${esc(r.stationName || '—')}</td>
+        <td data-label="ساعات التشغيل">${esc(r.generator?.totalRunHours || '—')}</td>
+        <td data-label="الكمية المستهلكة"><span style="color:#ef4444;font-weight:800;">−${f(r.fuel?.consumedDaily)} لتر</span></td>
+        <td data-label="ملاحظات" style="color:var(--text-muted);font-size:12px;">من تقرير التشغيل</td>
+      </tr>`).join('');
 
     return `
       <div style="max-width:1100px;">
@@ -708,68 +718,93 @@ window.AppUI = (() => {
           <div>
             <p class="eyebrow" style="color:var(--text-muted);font-size:12px;font-weight:700;margin:0 0 4px 0;letter-spacing:.5px;">إدارة الوقود</p>
             <h2 style="margin:0;font-size:24px;font-weight:900;color:var(--text-main);">⛽ سجل حركات السولار</h2>
-            <p style="margin:4px 0 0 0;color:var(--text-muted);font-size:13px;">كل الحركات مستقلة تماماً عن تقارير التشغيل اليومية.</p>
+            <p style="margin:4px 0 0 0;color:var(--text-muted);font-size:13px;">الوارد يُدخَل يدوياً · المستهلك يُحسب تلقائياً من تقارير التشغيل اليومية</p>
           </div>
-          <button type="button" onclick="WaterFuel.openFuelModal()" style="display:inline-flex;align-items:center;gap:8px;padding:12px 22px;border-radius:16px;background:linear-gradient(135deg,rgba(16,185,129,.9),rgba(5,150,105,.85));color:#fff;font-weight:800;font-size:14px;border:none;cursor:pointer;box-shadow:0 8px 24px rgba(16,185,129,.3);transition:transform .15s;">➕ تسجيل حركة جديدة</button>
+          <button type="button" onclick="WaterFuel.openFuelModal()" style="display:inline-flex;align-items:center;gap:8px;padding:12px 22px;border-radius:16px;background:linear-gradient(135deg,rgba(16,185,129,.9),rgba(5,150,105,.85));color:#fff;font-weight:800;font-size:14px;border:none;cursor:pointer;box-shadow:0 8px 24px rgba(16,185,129,.3);">➕ إضافة سولار وارد</button>
         </div>
 
         <!-- Summary Cards -->
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px;margin-bottom:28px;">
-          <div style="background:var(--bg-card);border:1px solid rgba(16,185,129,.25);border-radius:20px;padding:18px 20px;box-shadow:var(--card-shadow);">
-            <span style="font-size:11px;font-weight:700;color:var(--text-muted);display:block;margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px;">إجمالي الوارد</span>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px;margin-bottom:32px;">
+          <div style="background:var(--bg-card);border:1px solid rgba(16,185,129,.3);border-radius:20px;padding:18px 20px;box-shadow:var(--card-shadow);">
+            <span style="font-size:11px;font-weight:700;color:var(--text-muted);display:block;margin-bottom:6px;letter-spacing:.5px;">⬆ إجمالي الوارد</span>
             <strong style="font-size:26px;font-weight:900;color:#10b981;display:block;">+${f(incoming)}</strong>
-            <small style="color:var(--text-muted);font-size:12px;">لتر سولار وارد</small>
+            <small style="color:var(--text-muted);font-size:12px;">${sortedIncoming.length} عملية توريد</small>
           </div>
-          <div style="background:var(--bg-card);border:1px solid rgba(239,68,68,.25);border-radius:20px;padding:18px 20px;box-shadow:var(--card-shadow);">
-            <span style="font-size:11px;font-weight:700;color:var(--text-muted);display:block;margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px;">إجمالي المستهلك</span>
+          <div style="background:var(--bg-card);border:1px solid rgba(239,68,68,.3);border-radius:20px;padding:18px 20px;box-shadow:var(--card-shadow);">
+            <span style="font-size:11px;font-weight:700;color:var(--text-muted);display:block;margin-bottom:6px;letter-spacing:.5px;">⬇ إجمالي المستهلك</span>
             <strong style="font-size:26px;font-weight:900;color:#ef4444;display:block;">−${f(consumed)}</strong>
-            <small style="color:var(--text-muted);font-size:12px;">لتر استهلاك مسجّل</small>
+            <small style="color:var(--text-muted);font-size:12px;">من ${reportRows.length} تقرير تشغيل</small>
           </div>
-          <div style="background:var(--bg-card);border:1px solid rgba(${balance<0?'239,68,68':balance<200?'245,158,11':'16,185,129'},.25);border-radius:20px;padding:18px 20px;box-shadow:var(--card-shadow);">
-            <span style="font-size:11px;font-weight:700;color:var(--text-muted);display:block;margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px;">الرصيد الحالي</span>
+          <div style="background:var(--bg-card);border:2px solid ${balColor}40;border-radius:20px;padding:18px 20px;box-shadow:0 4px 20px ${balColor}20;">
+            <span style="font-size:11px;font-weight:700;color:var(--text-muted);display:block;margin-bottom:6px;letter-spacing:.5px;">📊 الرصيد الحالي</span>
             <strong style="font-size:26px;font-weight:900;color:${balColor};display:block;">${balance < 0 ? '−' : ''}${f(Math.abs(balance))}</strong>
             <small style="color:${balColor};font-size:12px;font-weight:700;">${balance < 0 ? '⚠️ رصيد سالب!' : balance < 200 ? '⚠️ رصيد منخفض' : '✅ الرصيد جيد'}</small>
           </div>
           <div style="background:var(--bg-card);border:1px solid var(--border-color);border-radius:20px;padding:18px 20px;box-shadow:var(--card-shadow);">
-            <span style="font-size:11px;font-weight:700;color:var(--text-muted);display:block;margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px;">عدد السجلات</span>
-            <strong style="font-size:26px;font-weight:900;color:var(--text-main);display:block;">${entries.length}</strong>
-            <small style="color:var(--text-muted);font-size:12px;">${entries.filter(e=>e.type!=='consumed').length} وارد / ${entries.filter(e=>e.type==='consumed').length} مستهلك</small>
+            <span style="font-size:11px;font-weight:700;color:var(--text-muted);display:block;margin-bottom:6px;letter-spacing:.5px;">📋 سجلات التوريد</span>
+            <strong style="font-size:26px;font-weight:900;color:var(--text-main);display:block;">${sortedIncoming.length}</strong>
+            <small style="color:var(--text-muted);font-size:12px;">${reportRows.length} تقرير يخصم منه</small>
           </div>
         </div>
 
-        <!-- Table -->
-        <div style="background:var(--bg-card);border:1px solid var(--border-color);border-radius:24px;box-shadow:var(--card-shadow);overflow:hidden;">
-          <div style="padding:18px 20px;border-bottom:1px solid var(--border-color);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
-            <h3 style="margin:0;font-size:15px;font-weight:800;color:var(--text-main);">📋 جميع حركات السولار (${sorted.length} سجل)</h3>
+        <!-- Incoming Fuel Table -->
+        <div style="background:var(--bg-card);border:1px solid rgba(16,185,129,.2);border-radius:24px;box-shadow:var(--card-shadow);overflow:hidden;margin-bottom:24px;">
+          <div style="padding:16px 20px;border-bottom:1px solid var(--border-color);display:flex;align-items:center;justify-content:space-between;gap:10px;background:rgba(16,185,129,.04);">
+            <div>
+              <h3 style="margin:0;font-size:15px;font-weight:800;color:#10b981;">⬆ سجل الوقود الوارد (${sortedIncoming.length} عملية)</h3>
+              <small style="color:var(--text-muted);font-size:12px;">يمكن إضافة وتعديل وحذف أي عملية توريد</small>
+            </div>
+            <button type="button" onclick="WaterFuel.openFuelModal()" style="padding:8px 16px;border-radius:12px;background:rgba(16,185,129,.15);border:1px solid rgba(16,185,129,.3);color:#10b981;font-weight:700;font-size:13px;cursor:pointer;">+ إضافة</button>
           </div>
           <div style="overflow-x:auto;">
-            ${sorted.length ? `
+            ${sortedIncoming.length ? `
             <table style="width:100%;border-collapse:collapse;min-width:700px;">
-              <thead>
-                <tr style="background:rgba(255,255,255,.03);border-bottom:1px solid var(--border-color);">
-                  <th style="padding:12px 16px;text-align:right;font-size:12px;font-weight:700;color:var(--text-muted);">التاريخ</th>
-                  <th style="padding:12px 16px;text-align:right;font-size:12px;font-weight:700;color:var(--text-muted);">النوع</th>
-                  <th style="padding:12px 16px;text-align:right;font-size:12px;font-weight:700;color:var(--text-muted);">الكمية</th>
-                  <th style="padding:12px 16px;text-align:right;font-size:12px;font-weight:700;color:var(--text-muted);">التفاصيل</th>
-                  <th style="padding:12px 16px;text-align:right;font-size:12px;font-weight:700;color:var(--text-muted);">المسؤول</th>
-                  <th style="padding:12px 16px;text-align:right;font-size:12px;font-weight:700;color:var(--text-muted);">الإجراءات</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${rows}
-              </tbody>
+              <thead><tr style="border-bottom:1px solid var(--border-color);">
+                <th style="padding:11px 16px;text-align:right;font-size:12px;font-weight:700;color:var(--text-muted);">التاريخ</th>
+                <th style="padding:11px 16px;text-align:right;font-size:12px;font-weight:700;color:var(--text-muted);">المورد</th>
+                <th style="padding:11px 16px;text-align:right;font-size:12px;font-weight:700;color:var(--text-muted);">كيفية التعبئة</th>
+                <th style="padding:11px 16px;text-align:right;font-size:12px;font-weight:700;color:var(--text-muted);">الكمية</th>
+                <th style="padding:11px 16px;text-align:right;font-size:12px;font-weight:700;color:var(--text-muted);">المسلّم</th>
+                <th style="padding:11px 16px;text-align:right;font-size:12px;font-weight:700;color:var(--text-muted);">الإجراءات</th>
+              </tr></thead>
+              <tbody>${incomingRows}</tbody>
             </table>` : `
-            <div style="padding:60px;text-align:center;color:var(--text-muted);">
-              <div style="font-size:48px;margin-bottom:12px;">⛽</div>
-              <p style="font-size:16px;font-weight:700;margin:0 0 8px 0;">لا توجد حركات سولار مسجّلة</p>
-              <p style="font-size:13px;margin:0 0 20px 0;">ابدأ بتسجيل أول حركة وارد أو استهلاك</p>
-              <button type="button" onclick="WaterFuel.openFuelModal()" style="padding:10px 24px;border-radius:12px;background:linear-gradient(135deg,rgba(16,185,129,.9),rgba(5,150,105,.85));color:#fff;font-weight:800;font-size:14px;border:none;cursor:pointer;">➕ إضافة أول سجل</button>
+            <div style="padding:40px;text-align:center;color:var(--text-muted);">
+              <div style="font-size:36px;margin-bottom:10px;">⛽</div>
+              <p style="font-weight:700;margin:0 0 12px;">لا توجد عمليات توريد مسجّلة</p>
+              <button type="button" onclick="WaterFuel.openFuelModal()" style="padding:9px 20px;border-radius:12px;background:rgba(16,185,129,.15);border:1px solid rgba(16,185,129,.3);color:#10b981;font-weight:700;cursor:pointer;">+ إضافة أول توريد</button>
+            </div>`}
+          </div>
+        </div>
+
+        <!-- Consumed from Reports Table -->
+        <div style="background:var(--bg-card);border:1px solid rgba(239,68,68,.2);border-radius:24px;box-shadow:var(--card-shadow);overflow:hidden;">
+          <div style="padding:16px 20px;border-bottom:1px solid var(--border-color);background:rgba(239,68,68,.04);">
+            <h3 style="margin:0 0 4px;font-size:15px;font-weight:800;color:#ef4444;">⬇ الاستهلاك من تقارير التشغيل (${reportRows.length} تقرير)</h3>
+            <small style="color:var(--text-muted);font-size:12px;">هذه القيم تُحسب تلقائياً من حقل "الوقود المستهلك اليومي" في كل تقرير تشغيل · لتعديلها افتح التقرير المقابل</small>
+          </div>
+          <div style="overflow-x:auto;">
+            ${reportRows.length ? `
+            <table style="width:100%;border-collapse:collapse;min-width:600px;">
+              <thead><tr style="border-bottom:1px solid var(--border-color);">
+                <th style="padding:11px 16px;text-align:right;font-size:12px;font-weight:700;color:var(--text-muted);">تاريخ التقرير</th>
+                <th style="padding:11px 16px;text-align:right;font-size:12px;font-weight:700;color:var(--text-muted);">المحطة</th>
+                <th style="padding:11px 16px;text-align:right;font-size:12px;font-weight:700;color:var(--text-muted);">ساعات التشغيل</th>
+                <th style="padding:11px 16px;text-align:right;font-size:12px;font-weight:700;color:var(--text-muted);">الوقود المستهلك</th>
+                <th style="padding:11px 16px;text-align:right;font-size:12px;font-weight:700;color:var(--text-muted);">المصدر</th>
+              </tr></thead>
+              <tbody>${consumedRows}</tbody>
+            </table>` : `
+            <div style="padding:40px;text-align:center;color:var(--text-muted);">
+              <p style="margin:0;">لا توجد تقارير تشغيل مسجّلة باستهلاك وقود حتى الآن</p>
             </div>`}
           </div>
         </div>
       </div>
     `;
   }
+
+
 
   function stableLayout(state, settings = {}) {
     let reports = (state?.reports || []).map(r => window.ReportUtils?.recalc ? window.ReportUtils.recalc(r) : r);
