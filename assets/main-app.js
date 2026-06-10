@@ -782,7 +782,7 @@ window.App = (() => {
   function goExport() { state.view = 'export'; render(); }
   
   function nextStep() {
-    if (state.formStep < 6) {
+    if (state.formStep < 5) {
       state.draft = collectSafeDraft();
       state.formStep++;
       render();

@@ -180,6 +180,65 @@ window.ReportUtils = (() => {
 
   const original = window.ReportUtils;
 
+  function getFuelStatsForDate(date) {
+    const raw = window.WaterFuelRawEntries;
+    if (!Array.isArray(raw)) {
+      return null;
+    }
+    const unique = [];
+    const seen = new Set();
+    raw.forEach(item => {
+      const key = [item.type || 'incoming', item.date || '', item.time || '', item.supplier || item.donor || item.consumedFor || '', item.quantityLiters ?? item.quantity ?? '', item.fillingMethod || '', item.deliveredBy || item.receivedBy || ''].join('|');
+      if (seen.has(key)) return;
+      seen.add(key);
+      unique.push(item);
+    });
+    
+    const sorted = [...unique].sort((a, b) => a.date.localeCompare(b.date));
+    
+    let stats = {
+      addedDaily: 0,
+      municipalSupplied: 0,
+      consumedDaily: 0,
+      previousBalance: 0,
+      currentBalance: 0,
+      loss: 0
+    };
+    
+    sorted.forEach(entry => {
+      const qty = Number(entry.quantityLiters || entry.quantity || 0);
+      const isConsumed = entry.type === 'consumed';
+      
+      if (entry.date === date) {
+        if (isConsumed) {
+          stats.consumedDaily += qty;
+        } else {
+          if (entry.source === 'municipality' || String(entry.supplier || '').includes('بلدية') || String(entry.fillingMethod || '').includes('بلدية')) {
+            stats.municipalSupplied += qty;
+          } else {
+            stats.addedDaily += qty;
+          }
+        }
+      }
+    });
+    
+    let balAtDate = 0;
+    sorted.forEach(entry => {
+      if (entry.date <= date) {
+        const qty = Number(entry.quantityLiters || entry.quantity || 0);
+        if (entry.type === 'consumed') {
+          balAtDate -= qty;
+        } else {
+          balAtDate += qty;
+        }
+      }
+    });
+    
+    stats.currentBalance = balAtDate;
+    stats.previousBalance = balAtDate - (stats.addedDaily + stats.municipalSupplied) + stats.consumedDaily;
+    return stats;
+  }
+
   function normalizeArabicDigits(value) {
     return String(value ?? '')
       .replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d))
@@ -284,6 +343,20 @@ window.ReportUtils = (() => {
     r.reportDate = normalizeDateInput(r.reportDate || '');
     r.generator = r.generator || { periods: [] };
     r.fuel = r.fuel || {};
+    
+    const stats = getFuelStatsForDate(r.reportDate);
+    if (stats !== null) {
+      r.fuel = {
+        addedDaily: stats.addedDaily || '',
+        consumedDaily: stats.consumedDaily || '',
+        municipalSupplied: stats.municipalSupplied || '',
+        previousBalance: stats.previousBalance || '',
+        currentBalance: stats.currentBalance || '',
+        loss: stats.loss || '',
+        notes: r.fuel?.notes || '',
+        extraFields: r.fuel?.extraFields || []
+      };
+    }
     r.water = r.water || {};
     r.tests = r.tests || {};
     r.beneficiaries = Array.isArray(r.beneficiaries) ? r.beneficiaries : [];
@@ -565,6 +638,52 @@ window.ReportUtils = (() => {
     if (!form || form.dataset.liveCalculationsBound === 'true') return;
     form.dataset.liveCalculationsBound = 'true';
 
+    const dateInput = form.querySelector('[name="reportDate"]');
+    if (dateInput) {
+      const fetchFuelDataForDate = async () => {
+        const date = dateInput.value;
+        if (!date) return;
+        
+        const addedInput = form.querySelector('[name="fuelAdded"]');
+        const municipalInput = form.querySelector('[name="fuelMunicipal"]');
+        if (!addedInput && !municipalInput) return;
+        
+        try {
+          if (window.firebase?.firestore) {
+            const db = firebase.firestore();
+            const snap = await db.collection('fuelEntries').where('date', '==', date).get();
+            let added = 0;
+            let municipal = 0;
+            snap.docs.forEach(doc => {
+              const data = doc.data() || {};
+              const qty = Number(data.quantityLiters || data.quantity || 0);
+              if (data.source === 'municipality' || String(data.supplier || '').includes('بلدية') || String(data.fillingMethod || '').includes('بلدية')) {
+                municipal += qty;
+              } else {
+                added += qty;
+              }
+            });
+            
+            if (addedInput) {
+              addedInput.value = added || '';
+              addedInput.dataset.autoCalculated = 'true';
+            }
+            if (municipalInput) {
+              municipalInput.value = municipal || '';
+              municipalInput.dataset.autoCalculated = 'true';
+            }
+            runAll(form, 'fuelAdded');
+          }
+        } catch (error) {
+          console.warn('Failed to fetch fuel entries for date', error);
+        }
+      };
+      
+      dateInput.addEventListener('change', fetchFuelDataForDate);
+      dateInput.addEventListener('input', fetchFuelDataForDate);
+      fetchFuelDataForDate();
+    }
+
     form.addEventListener('input', event => {
       markManual(event);
       runAll(form, event.target?.name || '');
@@ -614,7 +733,7 @@ window.ReportUtils = (() => {
     const seen = new Set();
     const unique = [];
     raw.forEach(item => {
-      const key = [item.date || '', item.time || '', item.supplier || item.donor || '', item.quantityLiters ?? item.quantity ?? '', item.fillingMethod || '', item.deliveredBy || ''].join('|');
+      const key = [item.type || 'incoming', item.date || '', item.time || '', item.supplier || item.donor || item.consumedFor || '', item.quantityLiters ?? item.quantity ?? '', item.fillingMethod || '', item.deliveredBy || item.receivedBy || ''].join('|');
       if (seen.has(key)) return;
       seen.add(key);
       unique.push(item);
@@ -623,11 +742,11 @@ window.ReportUtils = (() => {
   }
 
   function totalIncomingFuel() {
-    return uniqueIncomingEntries().reduce((sum, item) => sum + n(item.quantityLiters ?? item.quantity), 0);
+    return uniqueIncomingEntries().filter(item => item.type !== 'consumed').reduce((sum, item) => sum + n(item.quantityLiters ?? item.quantity), 0);
   }
 
   function totalConsumed(reports) {
-    return (reports || []).reduce((sum, r) => sum + n(r?.fuel?.consumedDaily), 0);
+    return uniqueIncomingEntries().filter(item => item.type === 'consumed').reduce((sum, item) => sum + n(item.quantityLiters ?? item.quantity), 0);
   }
 
   function remainingFuel(reports) {
@@ -644,19 +763,19 @@ window.ReportUtils = (() => {
         <div class="kpi-icon">⛽</div>
         <span>وقود وارد</span>
         <strong>${format(incoming)}</strong>
-        <small>من زر إضافة وقود وارد</small>
+        <small>من توريد السولار</small>
       </article>
       <article class="kpi-card fuel-kpi fuel-consumed-kpi">
         <div class="kpi-icon">🔥</div>
         <span>وقود مستخدم</span>
         <strong>${format(consumed)}</strong>
-        <small>من استهلاك التقارير اليومية</small>
+        <small>من استهلاك السولار</small>
       </article>
       <article class="kpi-card fuel-kpi fuel-remaining-kpi">
         <div class="kpi-icon">📦</div>
         <span>وقود متبقي</span>
         <strong>${format(remaining)}</strong>
-        <small>الوارد - المستخدم</small>
+        <small>رصيد السولار الحالي</small>
       </article>`;
   }
 
@@ -665,9 +784,9 @@ window.ReportUtils = (() => {
     const consumed = totalConsumed(lastReports);
     const remaining = incoming - consumed;
     const updates = [
-      ['.fuel-incoming-kpi', incoming, 'من زر إضافة وقود وارد'],
-      ['.fuel-consumed-kpi', consumed, 'من استهلاك التقارير اليومية'],
-      ['.fuel-remaining-kpi', remaining, 'الوارد - المستخدم']
+      ['.fuel-incoming-kpi', incoming, 'من توريد السولار'],
+      ['.fuel-consumed-kpi', consumed, 'من استهلاك السولار'],
+      ['.fuel-remaining-kpi', remaining, 'رصيد السولار الحالي']
     ];
     updates.forEach(([selector, value, hint]) => {
       const card = document.querySelector(selector);
@@ -861,12 +980,13 @@ window.ReportUtils = (() => {
 
   function fuelEntryKey(entry) {
     return [
+      clean(entry.type || 'incoming'),
       clean(entry.date),
       clean(entry.time),
-      clean(entry.supplier || entry.donor),
+      clean(entry.supplier || entry.donor || entry.consumedFor),
       fmt(entry.quantityLiters ?? entry.quantity),
       clean(entry.fillingMethod),
-      clean(entry.deliveredBy)
+      clean(entry.deliveredBy || entry.receivedBy)
     ].join('|');
   }
 
@@ -885,6 +1005,7 @@ window.ReportUtils = (() => {
   function normalizeFuelDoc(doc) {
     const data = doc.data ? doc.data() : doc;
     return {
+      type: data.type || 'incoming',
       date: data.date || '',
       time: data.time || '',
       supplier: data.supplier || data.donor || '',
@@ -918,31 +1039,21 @@ window.ReportUtils = (() => {
     const incomingCard = findCard([/إجمالي السولار المستلم/, /سولار مستلم/, /وقود وارد/]);
     const dateHint = startDate ? `من ${displayDate(startDate)} حتى اليوم` : 'لا يوجد وقود وارد بعد';
 
-    setCard(incomingCard, 'وقود وارد', incoming, 'من زر إضافة وقود وارد', 'fuel-incoming-kpi');
-    setCard(usedCard, 'وقود مستخدم', used, dateHint, 'fuel-used-kpi');
-    setCard(remainingCard, 'وقود متبقي', remaining, 'الوارد - المستخدم لنفس الفترة', 'fuel-remaining-kpi');
+    setCard(incomingCard, 'وقود وارد', incoming, 'من توريد السولار', 'fuel-incoming-kpi');
+    setCard(usedCard, 'وقود مستخدم', used, 'من استهلاك السولار', 'fuel-used-kpi');
+    setCard(remainingCard, 'وقود متبقي', remaining, 'رصيد السولار الحالي', 'fuel-remaining-kpi');
   }
 
   async function fetchSummary() {
     if (!window.firebase?.firestore) return null;
     const db = firebase.firestore();
-    const [fuelSnap, reportsSnap] = await Promise.all([
-      db.collection('fuelEntries').get(),
-      db.collection('reports').get()
-    ]);
+    const fuelSnap = await db.collection('fuelEntries').get();
 
     const incomingEntries = uniqueFuelEntries(fuelSnap.docs.map(normalizeFuelDoc));
-    const incoming = incomingEntries.reduce((sum, entry) => sum + num(entry.quantityLiters), 0);
+    const incoming = incomingEntries.filter(entry => entry.type !== 'consumed').reduce((sum, entry) => sum + num(entry.quantityLiters), 0);
+    const used = incomingEntries.filter(entry => entry.type === 'consumed').reduce((sum, entry) => sum + num(entry.quantityLiters), 0);
     const dates = incomingEntries.map(entry => entry.date).filter(Boolean).sort();
     const startDate = dates[0] || '';
-
-    const used = startDate
-      ? reportsSnap.docs.reduce((sum, doc) => {
-          const data = doc.data() || {};
-          if (!data.reportDate || data.reportDate < startDate) return sum;
-          return sum + num(data?.fuel?.consumedDaily);
-        }, 0)
-      : 0;
 
     return { incoming, used, remaining: incoming - used, startDate };
   }

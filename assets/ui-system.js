@@ -239,10 +239,9 @@ window.AppUI = (() => {
       <div class="wizard-stepper">
         <div class="step ${step >= 1 ? 'active' : ''} ${step > 1 ? 'completed' : ''}" onclick="App.setStep(1)"><span>1</span><b>بيانات عامة</b></div>
         <div class="step ${step >= 2 ? 'active' : ''} ${step > 2 ? 'completed' : ''}" onclick="App.setStep(2)"><span>2</span><b>المولد</b></div>
-        <div class="step ${step >= 3 ? 'active' : ''} ${step > 3 ? 'completed' : ''}" onclick="App.setStep(3)"><span>3</span><b>الوقود</b></div>
-        <div class="step ${step >= 4 ? 'active' : ''} ${step > 4 ? 'completed' : ''}" onclick="App.setStep(4)"><span>4</span><b>المياه</b></div>
-        <div class="step ${step >= 5 ? 'active' : ''} ${step > 5 ? 'completed' : ''}" onclick="App.setStep(5)"><span>5</span><b>الفحوصات والجهات</b></div>
-        <div class="step ${step >= 6 ? 'active' : ''}" onclick="App.setStep(6)"><span>6</span><b>المعاينة</b></div>
+        <div class="step ${step >= 3 ? 'active' : ''} ${step > 3 ? 'completed' : ''}" onclick="App.setStep(3)"><span>3</span><b>المياه</b></div>
+        <div class="step ${step >= 4 ? 'active' : ''} ${step > 4 ? 'completed' : ''}" onclick="App.setStep(4)"><span>4</span><b>الفحوصات والجهات</b></div>
+        <div class="step ${step >= 5 ? 'active' : ''}" onclick="App.setStep(5)"><span>5</span><b>المعاينة</b></div>
       </div>
 
       <datalist id="beneficiaryTemplateList">${templates.map(name => `<option value="${esc(name)}"></option>`).join('')}</datalist>
@@ -265,17 +264,10 @@ window.AppUI = (() => {
           <label class="wide">ملاحظات المولد<textarea name="generatorNotes">${esc(r.generator.notes || '')}</textarea></label>
         </section>
         
-        <section class="wizard-panel" style="display: ${step === 3 ? 'grid' : 'none'};">
-          <label>الوقود المضاف يومياً<input name="fuelAdded" type="number" value="${r.fuel.addedDaily || ''}"></label>
-          <label>الوقود المستهلك يومياً<input name="fuelConsumed" type="number" value="${r.fuel.consumedDaily || ''}"></label>
-          <label>المورد من البلدية<input name="fuelMunicipal" type="number" value="${r.fuel.municipalSupplied || ''}"></label>
-          <label>الرصيد السابق<input name="fuelPrevious" type="number" value="${r.fuel.previousBalance || ''}"></label>
-          <label>الرصيد الحالي<input name="fuelCurrent" type="number" value="${r.fuel.currentBalance || ''}"></label>
-          <label>الفرق/الفاقد<input name="fuelLoss" type="number" value="${r.fuel.loss || ''}"></label>
-          <label class="wide">ملاحظات الوقود<textarea name="fuelNotes">${esc(r.fuel.notes || '')}</textarea></label>
-        </section>
+        <!-- Step 3: Fuel (removed, kept as hidden section for backward compatibility) -->
+        <section class="wizard-panel" style="display: none;"></section>
         
-        <section class="wizard-panel" style="display: ${step === 4 ? 'grid' : 'none'};">
+        <section class="wizard-panel" style="display: ${step === 3 ? 'grid' : 'none'};">
           <label>إنتاج الغاطس كوب/ساعة<input name="submersibleRate" type="number" value="${r.water.submersibleRate || ''}"></label>
           <label>بعد الفلترة كوب/ساعة<input name="filteredRate" type="number" value="${r.water.filteredRate || ''}"></label>
           <label>الإنتاج اليومي بالكوب<input name="dailyProduction" type="number" value="${r.water.dailyProduction || ''}"></label>
@@ -289,7 +281,7 @@ window.AppUI = (() => {
           <label class="wide">ملاحظات المياه<textarea name="waterNotes">${esc(r.water.notes || '')}</textarea></label>
         </section>
         
-        <section class="wizard-panel wide" style="display: ${step === 5 ? 'block' : 'none'};">
+        <section class="wizard-panel wide" style="display: ${step === 4 ? 'block' : 'none'};">
           <div class="tests-section" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 32px;">
             <label>PH بعد التحلية<input name="phAfter" value="${r.tests.phAfterDesalination || ''}"></label>
             <label>PH مياه الغاطس<input name="phWell" value="${r.tests.phWellWater || ''}"></label>
@@ -315,7 +307,7 @@ window.AppUI = (() => {
           <button class="btn action-float" type="button" onclick="App.addBeneficiary()" style="margin-top: 16px;">إضافة جهة</button>
         </section>
         
-        <section class="wizard-panel wide" style="display: ${step === 6 ? 'block' : 'none'};">
+        <section class="wizard-panel wide" style="display: ${step === 5 ? 'block' : 'none'};">
           <div class="report-preview">${esc(window.ReportUtils.whatsappText(r))}</div>
         </section>
       </form>
@@ -323,7 +315,7 @@ window.AppUI = (() => {
       <div class="wizard-actions">
         ${step > 1 ? `<button class="btn" onclick="App.prevStep()">السابق</button>` : `<button class="btn" onclick="App.closeModal()">إلغاء</button>`}
         <div style="flex: 1;"></div>
-        ${step < 6 ? `<button class="btn primary" onclick="App.nextStep()">التالي</button>` : `<button class="btn primary big action-float" onclick="App.saveReport()">حفظ التقرير</button>`}
+        ${step < 5 ? `<button class="btn primary" onclick="App.nextStep()">التالي</button>` : `<button class="btn primary big action-float" onclick="App.saveReport()">حفظ التقرير</button>`}
       </div>
     </div>`;
   }
@@ -523,13 +515,8 @@ window.AppUI = (() => {
 
   function summary(reports) {
     const list = reports || [];
-    const latestFuel = [...list]
-      .filter(r => n(r?.fuel?.currentBalance) > 0)
-      .sort((a, b) => String(b.reportDate || '').localeCompare(String(a.reportDate || '')))[0];
     const data = list.reduce((acc, r) => {
       acc.runHours += hours(r?.generator?.totalRunHours);
-      acc.fuelConsumed += n(r?.fuel?.consumedDaily);
-      acc.fuelSupplied += n(r?.fuel?.addedDaily) + n(r?.fuel?.municipalSupplied);
       acc.waterProduction += n(r?.water?.dailyProduction);
       acc.rejectWater += n(r?.water?.rejectWater);
       acc.filledWater += n(r?.water?.filledWater);
@@ -537,8 +524,27 @@ window.AppUI = (() => {
       return acc;
     }, { runHours: 0, fuelConsumed: 0, fuelSupplied: 0, waterProduction: 0, rejectWater: 0, filledWater: 0, cars: 0 });
     data.lossPercentage = data.waterProduction ? (data.rejectWater / data.waterProduction) * 100 : 0;
-    data.stock = latestFuel ? n(latestFuel.fuel?.currentBalance) : 0;
-    data.stockDate = latestFuel?.reportDate || '';
+
+    const raw = Array.isArray(window.WaterFuelRawEntries) ? window.WaterFuelRawEntries : [];
+    const uniqueRaw = [];
+    const seen = new Set();
+    raw.forEach(item => {
+      const key = [item.type || 'incoming', item.date || '', item.time || '', item.supplier || item.donor || item.consumedFor || '', item.quantityLiters ?? item.quantity ?? '', item.fillingMethod || '', item.deliveredBy || item.receivedBy || ''].join('|');
+      if (seen.has(key)) return;
+      seen.add(key);
+      uniqueRaw.push(item);
+    });
+
+    const incoming = uniqueRaw.filter(x => x.type !== 'consumed').reduce((s, x) => s + n(x.quantityLiters ?? x.quantity), 0);
+    const consumed = uniqueRaw.filter(x => x.type === 'consumed').reduce((s, x) => s + n(x.quantityLiters ?? x.quantity), 0);
+    
+    data.fuelConsumed = consumed;
+    data.fuelSupplied = incoming;
+    data.stock = incoming - consumed;
+    
+    const latestEntry = [...uniqueRaw].sort((a, b) => String(b.date).localeCompare(String(a.date)))[0];
+    data.stockDate = latestEntry ? latestEntry.date : '';
+    
     return data;
   }
 
