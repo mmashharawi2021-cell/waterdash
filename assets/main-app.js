@@ -780,6 +780,7 @@ window.App = (() => {
   function goHome() { state.view = 'home'; render(); }
   function goReports() { state.view = 'reports'; render(); }
   function goExport() { state.view = 'export'; render(); }
+  function goFuel() { state.view = 'fuel'; render(); }
   
   function nextStep() {
     if (state.formStep < 5) {
@@ -1049,7 +1050,7 @@ window.App = (() => {
     toast('تم استرجاع الإعدادات الافتراضية', 'ok');
   }
 
-  return { state, start, login, logout, render, select, openNew, duplicateLastReport, openEdit, closeModal, togglePaste, parseText, addBeneficiary, addBeneficiaryTemplate, applyBeneficiaryTemplates, clearBeneficiaryAmounts, removeBeneficiary, saveReport, deleteReport, copyWhatsApp, exportPdf, exportOneExcel, exportAllExcel, exportFilteredExcel, exportFilteredWhatsApp, exportFilteredWord, exportFilteredPDF, exportFilteredImage, goHome, goReports, goExport, openSettings, closeSettings, saveSettings, resetSettings, setUIFilter, getUIFilter, nextStep, prevStep, setStep, toggleSidebar, toggleTheme, hardRefresh, setDashboardDateRange, setDashboardStation, openExplainModal };
+  return { state, start, login, logout, render, select, openNew, duplicateLastReport, openEdit, closeModal, togglePaste, parseText, addBeneficiary, addBeneficiaryTemplate, applyBeneficiaryTemplates, clearBeneficiaryAmounts, removeBeneficiary, saveReport, deleteReport, copyWhatsApp, exportPdf, exportOneExcel, exportAllExcel, exportFilteredExcel, exportFilteredWhatsApp, exportFilteredWord, exportFilteredPDF, exportFilteredImage, goHome, goReports, goExport, goFuel, openSettings, closeSettings, saveSettings, resetSettings, setUIFilter, getUIFilter, nextStep, prevStep, setStep, toggleSidebar, toggleTheme, hardRefresh, setDashboardDateRange, setDashboardStation, openExplainModal };
 })();
 
 window.addEventListener('DOMContentLoaded', () => window.App.start());
