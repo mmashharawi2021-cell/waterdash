@@ -601,7 +601,7 @@
     setTimeout(patchDom, 1200);
   }
 
-  window.WaterFuel = { openFuelModal, closeFuelModal, syncFuelDay, saveFuelEntry, deleteFuelEntry, cleanupDuplicateFuelEntries, openExportCenter, closeExportCenter, setExportType, executeExport, toggleMoreMenu, patchDom, toggleFuelFields };
+  window.WaterFuel = { openFuelModal, closeFuelModal, syncFuelDay, collectFuel, saveFuelEntry, deleteFuelEntry, cleanupDuplicateFuelEntries, openExportCenter, closeExportCenter, setExportType, executeExport, toggleMoreMenu, patchDom, toggleFuelFields };
   init();
 })();
 
