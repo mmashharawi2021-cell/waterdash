@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = '20260822-fuel-cycle-reset-4';
+  const VERSION = '20260822-fuel-cycle-reset-5';
   const RESET_DOC = 'fuelCycleReset';
   const RESET_COLLECTION = 'settings';
   const num = value => {
@@ -11,6 +11,7 @@
   const clean = value => String(value ?? '').replace(/\s+/g, ' ').trim();
   let resetMarker = null;
   let markerPromise = null;
+  let latestSummary = null;
 
   function db() { return window.firebase?.firestore ? firebase.firestore() : null; }
   function tsMillis(value) {
@@ -87,12 +88,10 @@
     const incomingEntries = uniqueEntries(fuelSnap.docs.map(doc => ({ id: doc.id, ...(doc.data() || {}) })))
       .filter(entry => entry.type !== 'consumed' && isAfterReset(entry, marker));
     const incoming = incomingEntries.reduce((sum, entry) => sum + num(entry.quantityLiters ?? entry.quantity), 0);
-    const used = reportsSnap.docs.reduce((sum, doc) => {
-      const data = doc.data() || {};
-      if (!isAfterReset(data, marker)) return sum;
-      return sum + num(data?.fuel?.consumedDaily ?? data?.fuel?.consumedFuel);
-    }, 0);
-    return { incoming, used, remaining: incoming - used, marker };
+    const cycleReports = reportsSnap.docs.map(doc => ({ id: doc.id, ...(doc.data() || {}) })).filter(data => isAfterReset(data, marker));
+    const used = cycleReports.reduce((sum, data) => sum + num(data?.fuel?.consumedDaily ?? data?.fuel?.consumedFuel), 0);
+    latestSummary = { incoming, used, remaining: incoming - used, marker, cycleReports };
+    return latestSummary;
   }
 
   async function updateKpis() {
@@ -106,6 +105,38 @@
       setCard(findCard([/وقود مستهلك/, /إجمالي السولار المستهلك/, /وقود مستخدم/, /الوقود المستهلك/, /الوقود المستهلك للدورة/]), 'الوقود المستهلك للدورة', s.used, hint);
       setCard(findCard([/السولار في المخزون/, /آخر رصيد/, /وقود متبقي/, /مؤشر رصيد السولار/, /رصيد السولار الحالي/]), 'رصيد السولار الحالي', s.remaining, 'الوارد بعد التصفير - المستهلك بعد التصفير');
     } catch (error) { console.warn('fuel cycle KPI reset skipped', error); }
+  }
+
+  function isFuelOperationalAlert(node) {
+    const text = clean(node?.textContent);
+    return /(?:رصيد|مخزون)\s*(?:الديزل|السولار|الوقود)|(?:الديزل|السولار|الوقود).*?(?:يكفي|منخفض|نفاد|رصيد)/.test(text);
+  }
+  function suppressLegacyFuelAlerts() {
+    const roots = [...document.querySelectorAll('.smart-warning, .notice, [class*="alert"], [class*="warning"]')];
+    roots.forEach(node => {
+      if (!isFuelOperationalAlert(node)) return;
+      node.dataset.fuelCycleLegacyAlert = 'hidden';
+      node.style.setProperty('display', 'none', 'important');
+    });
+  }
+  function patchWarningRenderer() {
+    if (!window.WarningSkipActions || window.WarningSkipActions.__fuelCyclePatched) return;
+    const originalVisible = window.WarningSkipActions.visibleWarnings;
+    const originalRender = window.WarningSkipActions.renderWarnings;
+    if (typeof originalVisible === 'function') {
+      window.WarningSkipActions.visibleWarnings = function(report) {
+        const list = originalVisible.call(this, report) || [];
+        return list.filter(message => !/(?:رصيد|مخزون)\s*(?:الديزل|السولار|الوقود)|(?:الديزل|السولار|الوقود).*?(?:يكفي|منخفض|نفاد|رصيد)/.test(clean(message)));
+      };
+    }
+    if (typeof originalRender === 'function') {
+      window.WarningSkipActions.renderWarnings = function(report) {
+        const html = originalRender.call(this, report);
+        setTimeout(suppressLegacyFuelAlerts, 0);
+        return html;
+      };
+    }
+    window.WarningSkipActions.__fuelCyclePatched = true;
   }
 
   async function previousCycleBalanceForReport(reportDate, editingId = null) {
@@ -159,7 +190,13 @@
     window.App.__fuelCycleDuplicatePatched = true;
   }
 
-  function run() { patchDuplicate(); updateKpis(); enforceFormCycle(); }
+  function run() {
+    patchDuplicate();
+    patchWarningRenderer();
+    updateKpis().finally(() => suppressLegacyFuelAlerts());
+    enforceFormCycle();
+    suppressLegacyFuelAlerts();
+  }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', run); else run();
   setTimeout(run, 700); setTimeout(run, 2200); setTimeout(run, 5000);
   const observer = new MutationObserver(() => {
