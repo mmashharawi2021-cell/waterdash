@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = '20260822-fuel-cycle-reset-5';
+  const VERSION = '20260822-fuel-cycle-reset-6';
   const RESET_DOC = 'fuelCycleReset';
   const RESET_COLLECTION = 'settings';
   const num = value => {
@@ -11,7 +11,8 @@
   const clean = value => String(value ?? '').replace(/\s+/g, ' ').trim();
   let resetMarker = null;
   let markerPromise = null;
-  let latestSummary = null;
+  let refreshTimer = null;
+  let listenersStarted = false;
 
   function db() { return window.firebase?.firestore ? firebase.firestore() : null; }
   function tsMillis(value) {
@@ -33,14 +34,15 @@
   function findCard(patterns) {
     return [...document.querySelectorAll('.kpi-card, .kpi-wide')].find(card => patterns.some(re => re.test(card.textContent || ''))) || null;
   }
+  function setText(el, value) {
+    if (el && el.textContent !== String(value)) el.textContent = String(value);
+  }
   function setCard(card, label, value, hint) {
     if (!card) return;
-    const span = card.querySelector('span');
-    const strong = card.querySelector('strong');
-    const small = card.querySelector('small');
-    if (span) span.textContent = label;
-    if (strong) strong.textContent = fmt(value);
-    if (small) small.textContent = hint;
+    setText(card.querySelector('span'), label);
+    setText(card.querySelector('strong'), fmt(value));
+    setText(card.querySelector('small'), hint);
+    card.dataset.fuelCycleReset = VERSION;
   }
   function markerLabel(marker) {
     const ms = tsMillis(marker?.startedAt);
@@ -90,8 +92,7 @@
     const incoming = incomingEntries.reduce((sum, entry) => sum + num(entry.quantityLiters ?? entry.quantity), 0);
     const cycleReports = reportsSnap.docs.map(doc => ({ id: doc.id, ...(doc.data() || {}) })).filter(data => isAfterReset(data, marker));
     const used = cycleReports.reduce((sum, data) => sum + num(data?.fuel?.consumedDaily ?? data?.fuel?.consumedFuel), 0);
-    latestSummary = { incoming, used, remaining: incoming - used, marker, cycleReports };
-    return latestSummary;
+    return { incoming, used, remaining: incoming - used, marker, cycleReports };
   }
 
   async function updateKpis() {
@@ -104,7 +105,13 @@
       setCard(findCard([/إجمالي السولار المستلم/, /سولار مستلم/, /وقود وارد/, /الوقود المزود/, /الوقود المتاح للدورة/, /الوقود الوارد للدورة/]), 'الوقود الوارد للدورة', s.incoming, hint);
       setCard(findCard([/وقود مستهلك/, /إجمالي السولار المستهلك/, /وقود مستخدم/, /الوقود المستهلك/, /الوقود المستهلك للدورة/]), 'الوقود المستهلك للدورة', s.used, hint);
       setCard(findCard([/السولار في المخزون/, /آخر رصيد/, /وقود متبقي/, /مؤشر رصيد السولار/, /رصيد السولار الحالي/]), 'رصيد السولار الحالي', s.remaining, 'الوارد بعد التصفير - المستهلك بعد التصفير');
+      suppressLegacyFuelAlerts();
     } catch (error) { console.warn('fuel cycle KPI reset skipped', error); }
+  }
+
+  function scheduleRefresh(delay = 30) {
+    clearTimeout(refreshTimer);
+    refreshTimer = setTimeout(updateKpis, delay);
   }
 
   function isFuelOperationalAlert(node) {
@@ -112,8 +119,7 @@
     return /(?:رصيد|مخزون)\s*(?:الديزل|السولار|الوقود)|(?:الديزل|السولار|الوقود).*?(?:يكفي|منخفض|نفاد|رصيد)/.test(text);
   }
   function suppressLegacyFuelAlerts() {
-    const roots = [...document.querySelectorAll('.smart-warning, .notice, [class*="alert"], [class*="warning"]')];
-    roots.forEach(node => {
+    [...document.querySelectorAll('.smart-warning, .notice, [class*="alert"], [class*="warning"]')].forEach(node => {
       if (!isFuelOperationalAlert(node)) return;
       node.dataset.fuelCycleLegacyAlert = 'hidden';
       node.style.setProperty('display', 'none', 'important');
@@ -139,6 +145,32 @@
     window.WarningSkipActions.__fuelCyclePatched = true;
   }
 
+  function patchAppRender() {
+    if (!window.App || window.App.__fuelCycleRenderPatched || typeof window.App.render !== 'function') return;
+    const original = window.App.render;
+    window.App.render = function() {
+      const result = original.apply(this, arguments);
+      scheduleRefresh(0);
+      setTimeout(updateKpis, 100);
+      setTimeout(updateKpis, 350);
+      return result;
+    };
+    window.App.__fuelCycleRenderPatched = true;
+  }
+
+  function startDataListeners() {
+    if (listenersStarted || !db()) return;
+    listenersStarted = true;
+    try {
+      db().collection('fuelEntries').onSnapshot(() => scheduleRefresh(20), err => console.warn('fuel cycle fuel listener', err));
+      db().collection('reports').onSnapshot(() => scheduleRefresh(20), err => console.warn('fuel cycle reports listener', err));
+      db().collection(RESET_COLLECTION).doc(RESET_DOC).onSnapshot(snap => {
+        if (snap.exists) resetMarker = snap.data();
+        scheduleRefresh(20);
+      }, err => console.warn('fuel cycle marker listener', err));
+    } catch (error) { console.warn('fuel cycle listeners skipped', error); }
+  }
+
   async function previousCycleBalanceForReport(reportDate, editingId = null) {
     const firestore = db();
     const marker = await ensureResetMarker();
@@ -148,7 +180,7 @@
       firestore.collection('reports').get()
     ]);
     const incomingBefore = uniqueEntries(fuelSnap.docs.map(doc => ({ id: doc.id, ...(doc.data() || {}) })))
-      .filter(entry => entry.type !== 'consumed' && isAfterReset(entry, marker) && (!reportDate || !entry.date || entry.date < reportDate))
+      .filter(entry => entry.type !== 'consumed' && isAfterReset(entry, marker) && (!reportDate || !entry.date || entry.date <= reportDate))
       .reduce((sum, entry) => sum + num(entry.quantityLiters ?? entry.quantity), 0);
     const consumedBefore = reportsSnap.docs.reduce((sum, doc) => {
       if (editingId && doc.id === editingId) return sum;
@@ -191,22 +223,25 @@
   }
 
   function run() {
+    patchAppRender();
     patchDuplicate();
     patchWarningRenderer();
-    updateKpis().finally(() => suppressLegacyFuelAlerts());
+    startDataListeners();
+    scheduleRefresh(0);
     enforceFormCycle();
     suppressLegacyFuelAlerts();
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', run); else run();
-  setTimeout(run, 700); setTimeout(run, 2200); setTimeout(run, 5000);
-  const observer = new MutationObserver(() => {
-    clearTimeout(window.__fuelCycleResetTimer);
-    window.__fuelCycleResetTimer = setTimeout(run, 120);
+  setTimeout(run, 500); setTimeout(run, 1500); setTimeout(run, 4000);
+  const observer = new MutationObserver(mutations => {
+    const meaningful = mutations.some(m => [...m.addedNodes].some(n => n.nodeType === 1 && !n.closest?.('[data-fuel-cycle-reset]')));
+    if (meaningful) scheduleRefresh(80);
+    suppressLegacyFuelAlerts();
   });
   if (document.body) observer.observe(document.body, { childList: true, subtree: true });
   else document.addEventListener('DOMContentLoaded', () => observer.observe(document.body, { childList: true, subtree: true }));
   document.addEventListener('change', event => {
     if (event.target?.matches?.('[name="reportDate"]')) setTimeout(enforceFormCycle, 0);
   }, true);
-  try { firebase.auth().onAuthStateChanged(() => setTimeout(run, 500)); } catch {}
+  try { firebase.auth().onAuthStateChanged(() => setTimeout(run, 300)); } catch {}
 })();
