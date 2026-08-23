@@ -4,7 +4,7 @@
    FILE: version-guard.js
    ========================================== */
 (() => {
-  const BUILD_ID = window.WATER_APP_BUILD || '20260823-prod-stable-v1';
+  const BUILD_ID = window.WATER_APP_BUILD || '20260823-fuel-cycle-admin-082b9e2-v2';
   const BUILD_KEY = 'waterAppBuildId';
   const SAFE_CACHE_KEYS = [/cache/i, /snapshot/i, /lastHtml/i, /stale/i, /oldUi/i];
 
@@ -50,8 +50,10 @@
       safeStorageCleanup(previousBuild);
       localStorage.setItem(BUILD_KEY, BUILD_ID);
       localStorage.setItem('waterAppLastBootAt', new Date().toISOString());
+      return Boolean(previousBuild && previousBuild !== BUILD_ID);
     } catch (error) {
       console.warn('Build marker skipped', error);
+      return false;
     }
   }
 
@@ -89,8 +91,8 @@
     }
   };
 
-  markBuild();
-  clearBrowserCaches();
+  const buildChanged = markBuild();
+  if (buildChanged) clearBrowserCaches();
   forceVersionedUrl();
   setTimeout(releaseBootLock, 4500);
 })();

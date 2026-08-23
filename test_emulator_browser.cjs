@@ -5,7 +5,11 @@ const { getFirestore } = require('firebase-admin/firestore');
 const { chromium } = require(process.env.WATERDASH_PLAYWRIGHT_MODULE || 'playwright');
 
 const projectId = 'waterdash-emulator';
-const baseUrl = process.env.WATERDASH_BROWSER_URL || 'http://127.0.0.1:4173';
+const expectedBuild = '20260823-fuel-cycle-admin-082b9e2-v2';
+const configuredBaseUrl = process.env.WATERDASH_BROWSER_URL || 'http://127.0.0.1:4173';
+const baseUrl = new URL(configuredBaseUrl);
+baseUrl.searchParams.set('v', expectedBuild);
+const browserUrl = baseUrl.toString();
 const allowedHosts = new Set(['127.0.0.1', 'localhost', '::1']);
 let passed = 0;
 
@@ -31,7 +35,7 @@ async function upsertUser(auth, email, role, disabled = false) {
 async function seed() {
   localHost(process.env.FIREBASE_AUTH_EMULATOR_HOST, 'FIREBASE_AUTH_EMULATOR_HOST');
   localHost(process.env.FIRESTORE_EMULATOR_HOST, 'FIRESTORE_EMULATOR_HOST');
-  localHost(new URL(baseUrl).hostname, 'WATERDASH_BROWSER_URL');
+  localHost(new URL(browserUrl).hostname, 'WATERDASH_BROWSER_URL');
   const app = getApps()[0] || initializeApp({ projectId });
   const auth = getAuth(app);
   await Promise.all([
@@ -74,10 +78,12 @@ async function main() {
     window.WATER_APP_EMULATOR = { enabled: true, host: '127.0.0.1', authPort: 9099, firestorePort: 8080 };
   });
 
-  await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+  await page.goto(browserUrl, { waitUntil: 'domcontentloaded' });
   console.log('BROWSER_STEP=loaded');
   await page.waitForSelector('#loginUsername', { timeout: 10000 });
   console.log('BROWSER_STEP=login-ready');
+  check(await page.evaluate(expected => window.WATER_APP_BUILD === expected && document.documentElement.dataset.waterBuild === expected, expectedBuild), 'browser loaded the fuel-cycle candidate build identity');
+  check(await page.evaluate(expected => performance.getEntriesByType('resource').some(entry => entry.name.includes(`/assets/ui-system.js?v=${expected}`)) && performance.getEntriesByType('resource').some(entry => entry.name.includes(`/assets/fuel-system.js?v=${expected}`)), expectedBuild), 'browser loaded versioned candidate UI and fuel assets');
   check(await page.evaluate(() => window.WATER_APP_RUNTIME?.mode === 'emulator'), 'runtime reports emulator mode');
   await page.fill('#loginUsername', 'invalid@example.test');
   await page.fill('#loginPassword', 'wrong-password');
@@ -218,9 +224,9 @@ async function main() {
 
   for (const width of [390, 360]) {
     await page.setViewportSize({ width, height: 800 });
-    await page.evaluate(() => window.App.goHome());
+    await page.evaluate(() => window.App.goFuel());
     await page.waitForTimeout(150);
-    check(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), `${width}px layout has no horizontal overflow`);
+    check(await page.locator('button').filter({ hasText: 'تصفير الوقود' }).isVisible() && await page.locator('button').filter({ hasText: 'استعادة الاحتساب من تاريخ' }).isVisible() && await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), `${width}px Fuel Log shows cycle administration without horizontal overflow`);
   }
 
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -259,7 +265,7 @@ async function main() {
   check(await page.locator('#loginUsername').isVisible(), 'disabled account remains unauthenticated');
   console.log('BROWSER_STEP=disabled-denied');
   for (const [email, role] of [
-    ['supervisor@example.test', 'supervisor'], ['dataentry@example.test', 'dataEntry'], ['viewer@example.test', 'viewer']
+    ['viewer@example.test', 'viewer'], ['dataentry@example.test', 'dataEntry'], ['supervisor@example.test', 'supervisor']
   ]) {
     console.log(`BROWSER_STEP=${role}-context`);
     const roleContext = await browser.newContext({ viewport: { width: 1440, height: 900 } });
@@ -277,7 +283,7 @@ async function main() {
       if (!expectedInvalidLogin && !expectedCycleConcurrency) errors.push(message.text());
     });
     rolePage.on('request', request => requests.push(request.url()));
-    await rolePage.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+    await rolePage.goto(browserUrl, { waitUntil: 'domcontentloaded' });
     await rolePage.fill('#loginUsername', email);
     await rolePage.fill('#loginPassword', 'Safe-Emulator-Only-1!');
     await rolePage.locator('button[type="submit"]').click();

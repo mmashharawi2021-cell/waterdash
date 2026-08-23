@@ -33,7 +33,10 @@ window.AuthUsers = (() => {
       clearCurrentUser();
       return null;
     }
-    const token = await firebaseUser.getIdTokenResult();
+    // RBAC is derived only from the current Firebase custom claim.  Refresh at
+    // each auth-state transition so a newly assigned canonical role cannot be
+    // rendered from a stale cached ID token.
+    const token = await firebaseUser.getIdTokenResult(true);
     const role = String(token.claims.waterdashRole || '');
     const permissions = ROLE_DEFINITIONS[role]?.permissions || {};
     tokenUser = {

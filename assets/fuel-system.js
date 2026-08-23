@@ -406,7 +406,7 @@
     if (!window.AuthUsers?.currentUser) return true;
     const user = window.AuthUsers.currentUser();
     if (!user) return true;
-    if (user.role === 'superAdmin' || user.roleLabel === 'مدير النظام') return true;
+    if (user.role === 'superAdmin') return true;
     return window.AuthUsers.hasPermission?.(permission) === true;
   }
 
