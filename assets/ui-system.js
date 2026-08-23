@@ -87,8 +87,8 @@ window.AppUI = (() => {
   const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
   const d = v => window.ReportUtils.displayDate(v);
 
-  function login(configured) {
-    return `<main class="login-screen premium-login"><section class="login-visual"><div class="orb orb-a"></div><div class="orb orb-b"></div><div class="well-mark">💧</div><p class="eyebrow">منصة تشغيل رسمية</p><h1>نظام تقارير تشغيل وضخ المياه</h1></section><section class="login-card"><p class="eyebrow">تسجيل الدخول</p><h2>مرحبًا بك</h2><p class="muted">أدخل البريد الإلكتروني وكلمة المرور المعتمدين للمتابعة.</p>${!configured ? `<div class="notice warn"><p>Firebase غير مفعّل بعد. راجع إعدادات Firebase المعتمدة.</p></div>` : ''}<form onsubmit="App.login(event)" class="login-form"><label>البريد الإلكتروني</label><input id="loginUsername" type="email" required autocomplete="username" placeholder="name@example.com"><label>كلمة المرور</label><input id="loginPassword" type="password" required autocomplete="current-password" placeholder="أدخل كلمة المرور"><button class="btn primary big action-float" type="submit">دخول للنظام</button></form></section></main>`;
+  function login(configured, notice = '') {
+    return `<main class="login-screen premium-login"><section class="login-visual"><div class="orb orb-a"></div><div class="orb orb-b"></div><div class="well-mark">💧</div><p class="eyebrow">منصة تشغيل رسمية</p><h1>نظام تقارير تشغيل وضخ المياه</h1></section><section class="login-card"><p class="eyebrow">تسجيل الدخول</p><h2>مرحبًا بك</h2><p class="muted">أدخل البريد الإلكتروني وكلمة المرور المعتمدين للمتابعة.</p>${notice ? `<div class="notice warn"><p>${esc(notice)}</p></div>` : ''}${!configured ? `<div class="notice warn"><p>Firebase غير مفعّل بعد. راجع إعدادات Firebase المعتمدة.</p></div>` : ''}<form onsubmit="App.login(event)" class="login-form"><label>البريد الإلكتروني</label><input id="loginUsername" type="email" required autocomplete="username" placeholder="name@example.com"><label>كلمة المرور</label><input id="loginPassword" type="password" required autocomplete="current-password" placeholder="أدخل كلمة المرور"><button class="btn primary big action-float" type="submit">دخول للنظام</button></form></section></main>`;
   }
 
   function skeleton() {
@@ -347,70 +347,6 @@ window.AppUI = (() => {
   }
 
   return { login, skeleton, layout, reportForm, settingsModal, esc };
-})();
-
-
-/* ==========================================
-   FILE: startup-stability-fix.js
-   ========================================== */
-(() => {
-  function patchListenReports() {
-    if (!window.FirebaseService || window.FirebaseService.__startupStabilityPatched) return;
-
-    window.FirebaseService.listenReports = function stableListenReports(callback) {
-      window.FirebaseService.init?.();
-      const db = firebase.firestore();
-      let delivered = false;
-      let unsubscribe = () => {};
-
-      const fallback = setTimeout(() => {
-        if (delivered) return;
-        delivered = true;
-        console.warn('Reports snapshot delayed. Rendering fallback dashboard.');
-        callback(window.__WATER_REPORTS_CACHE__ || []);
-      }, 3500);
-
-      try {
-        unsubscribe = db.collection('reports').orderBy('reportDate', 'desc').onSnapshot(snapshot => {
-          delivered = true;
-          clearTimeout(fallback);
-          const reports = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-          window.__WATER_REPORTS_CACHE__ = reports;
-          callback(reports);
-        }, error => {
-          delivered = true;
-          clearTimeout(fallback);
-          console.error('Reports listener failed:', error);
-          callback(window.__WATER_REPORTS_CACHE__ || []);
-          setTimeout(() => {
-            window.App?.toast?.('تم فتح اللوحة، لكن تعذر تحميل التقارير من Firestore مؤقتًا.', 'warn');
-          }, 400);
-        });
-      } catch (error) {
-        delivered = true;
-        clearTimeout(fallback);
-        console.error('Reports listener crashed:', error);
-        callback(window.__WATER_REPORTS_CACHE__ || []);
-      }
-
-      return () => {
-        clearTimeout(fallback);
-        try { unsubscribe?.(); } catch {}
-      };
-    };
-
-    window.FirebaseService.__startupStabilityPatched = true;
-  }
-
-  // patchLayoutSafety: REMOVED — safety try/catch is now integrated into
-  // the stableLayout assignment inside stable-layout-reset.
-
-  function boot() {
-    patchListenReports();
-  }
-
-  boot();
-  window.addEventListener('DOMContentLoaded', boot);
 })();
 
 

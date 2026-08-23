@@ -5,7 +5,7 @@ const { getFirestore } = require('firebase-admin/firestore');
 const { chromium } = require(process.env.WATERDASH_PLAYWRIGHT_MODULE || 'playwright');
 
 const projectId = 'waterdash-emulator';
-const expectedBuild = '20260823-fuel-cycle-admin-082b9e2-v2';
+const expectedBuild = '20260823-auth-session-recovery-c4f2e34-v1';
 const configuredBaseUrl = process.env.WATERDASH_BROWSER_URL || 'http://127.0.0.1:4173';
 const baseUrl = new URL(configuredBaseUrl);
 baseUrl.searchParams.set('v', expectedBuild);
@@ -85,6 +85,10 @@ async function main() {
   check(await page.evaluate(expected => window.WATER_APP_BUILD === expected && document.documentElement.dataset.waterBuild === expected, expectedBuild), 'browser loaded the fuel-cycle candidate build identity');
   check(await page.evaluate(expected => performance.getEntriesByType('resource').some(entry => entry.name.includes(`/assets/ui-system.js?v=${expected}`)) && performance.getEntriesByType('resource').some(entry => entry.name.includes(`/assets/fuel-system.js?v=${expected}`)), expectedBuild), 'browser loaded versioned candidate UI and fuel assets');
   check(await page.evaluate(() => window.WATER_APP_RUNTIME?.mode === 'emulator'), 'runtime reports emulator mode');
+  check(await page.evaluate(() => window.FirebaseService.getListenerDiagnostics().reportsStarted === 0 && window.WaterFuel.getListenerDiagnostics().starts === 0), 'unauthenticated browser starts no protected Firestore listeners');
+  await page.evaluate(() => firebase.auth().signInAnonymously());
+  await page.waitForFunction(() => !firebase.auth().currentUser && !window.AuthUsers?.currentUser?.() && Boolean(document.querySelector('#loginUsername')));
+  check(await page.evaluate(() => window.FirebaseService.getListenerDiagnostics().reportsStarted === 0 && window.WaterFuel.getListenerDiagnostics().starts === 0), 'anonymous Firebase session is rejected before protected reads');
   await page.fill('#loginUsername', 'invalid@example.test');
   await page.fill('#loginPassword', 'wrong-password');
   await page.locator('button[type="submit"]').click();
@@ -103,6 +107,20 @@ async function main() {
   await page.waitForFunction(() => window.WaterFuel?.getCycleState?.().loaded === true);
   check(await page.evaluate(() => window.WaterFuel.getCycleState().startDate === '2026-08-22'), 'trusted fuel-cycle configuration starts at verified boundary');
   check(await page.evaluate(() => window.WaterFuel.getCycleLedger({ fuelEntries: window.WaterFuelRawEntries || [], reports: window.App.state.reports }).currentBalance === 828), 'cycle ledger is 1056 minus 228');
+  const firstListenerCounts = await page.evaluate(() => ({ reports: window.FirebaseService.getListenerDiagnostics().reportsStarted, fuel: window.WaterFuel.getListenerDiagnostics().starts }));
+  await page.evaluate(() => firebase.auth().currentUser.getIdToken(true));
+  await page.waitForTimeout(150);
+  check(await page.evaluate(expected => window.FirebaseService.getListenerDiagnostics().reportsStarted === expected.reports && window.WaterFuel.getListenerDiagnostics().starts === expected.fuel, firstListenerCounts), 'token refresh does not duplicate protected listeners');
+  await page.evaluate(() => window.App.dataAccessError('اختبار رفض الصلاحية'));
+  check(await page.locator('body').innerText().then(text => text.includes('لم تُعرض أي قيم بديلة') && text.includes('اختبار رفض الصلاحية') && !text.includes('لا توجد تقارير محفوظة.')), 'permission denial renders an explicit data-access error instead of zero/empty operational data');
+  await page.evaluate(() => window.App.logout(true));
+  await page.waitForSelector('#loginUsername');
+  await page.fill('#loginUsername', 'superadmin@example.test');
+  await page.fill('#loginPassword', 'Safe-Emulator-Only-1!');
+  await page.locator('button[type="submit"]').click();
+  await page.waitForFunction(() => window.AuthUsers?.currentUser?.()?.role === 'superAdmin' && window.App?.state?.reports?.length >= 2);
+  await page.waitForFunction(expected => window.FirebaseService.getListenerDiagnostics().reportsStarted === expected.reports + 1 && window.WaterFuel.getListenerDiagnostics().starts === expected.fuel + 2 && window.WaterFuel.getListenerDiagnostics().active === 2, firstListenerCounts);
+  check(await page.evaluate(expected => window.FirebaseService.getListenerDiagnostics().reportsStarted === expected.reports + 1 && window.WaterFuel.getListenerDiagnostics().starts === expected.fuel + 2 && window.WaterFuel.getListenerDiagnostics().active === 2, firstListenerCounts), 're-login reconstructs each protected listener exactly once');
 
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => window.AuthUsers?.currentUser?.()?.role === 'superAdmin' && window.App?.state?.reports?.length >= 2);
@@ -256,7 +274,7 @@ async function main() {
   console.log('BROWSER_STEP=whatsapp-exported');
   await page.evaluate(() => window.FirebaseService.signOut());
   await page.waitForSelector('#loginUsername');
-  check(true, 'logout returned to login');
+  check(await page.evaluate(() => window.FirebaseService.getListenerDiagnostics().reportsStopped === window.FirebaseService.getListenerDiagnostics().reportsStarted && window.WaterFuel.getListenerDiagnostics().active === 0), 'logout stops every protected listener before the login screen');
   console.log('BROWSER_STEP=logged-out');
   await page.fill('#loginUsername', 'disabled@example.test');
   await page.fill('#loginPassword', 'Safe-Emulator-Only-1!');
@@ -288,7 +306,12 @@ async function main() {
     await rolePage.fill('#loginPassword', 'Safe-Emulator-Only-1!');
     await rolePage.locator('button[type="submit"]').click();
     await rolePage.waitForFunction(expectedRole => window.AuthUsers?.currentUser?.()?.role === expectedRole, role);
+    await rolePage.waitForFunction(() => window.App?.state?.phase === 'ready');
     check(true, `${role} native Firebase Auth login succeeded`);
+    check(await rolePage.evaluate(expectedRole => {
+      const addReport = Boolean(document.querySelector('#nav-form'));
+      return expectedRole === 'viewer' ? !addReport : addReport;
+    }, role), `${role} report-create UI obeys canonical RBAC`);
     console.log(`BROWSER_STEP=${role}-fuel-ui`);
     await rolePage.evaluate(() => window.App.goFuel());
     check(await rolePage.locator('button').filter({ hasText: 'تصفير الوقود' }).count() === 0, `${role} does not receive fuel-cycle admin UI`);
