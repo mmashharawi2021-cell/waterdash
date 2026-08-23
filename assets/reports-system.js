@@ -19,6 +19,8 @@ window.ReportUtils = (() => {
     if (value === null || value === undefined || value === '') return 0;
     if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
     let s = normalizeDigits(value).trim();
+    s = s.replace(/[\u066B٫]/g, '.');
+    s = s.replace(/[\u066C]/g, '');
     if (s.includes(',') && s.includes('.')) {
       s = s.replace(/,/g, '');
     } else if ((s.match(/,/g) || []).length > 1) {
@@ -192,12 +194,13 @@ window.ReportUtils = (() => {
   }
 
   function recalc(report) {
-    const r = structuredClone(report || emptyReport());
+    const base = emptyReport();
+    const r = structuredClone(report || base);
     r.reportDate = normalizeDateInput(r.reportDate || '');
-    r.generator = r.generator || { periods: [] };
-    r.fuel = r.fuel || {};
-    r.water = r.water || {};
-    r.tests = r.tests || {};
+    r.generator = { ...base.generator, ...(r.generator || {}) };
+    r.fuel = { ...base.fuel, ...(r.fuel || {}) };
+    r.water = { ...base.water, ...(r.water || {}) };
+    r.tests = { ...base.tests, ...(r.tests || {}) };
     r.beneficiaries = Array.isArray(r.beneficiaries) ? r.beneficiaries : [];
     const skippedWarnings = Array.isArray(r.skippedWarnings) ? r.skippedWarnings : [];
 

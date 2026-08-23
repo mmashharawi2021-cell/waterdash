@@ -27,7 +27,7 @@
     const next = structuredClone(report || {});
     next.beneficiaries = Array.isArray(next.beneficiaries) ? next.beneficiaries.map(item => {
       if (!isExternalWater(item.name)) return item;
-      return { ...item, cars: '0' };
+      return { ...item, cars: 0 };
     }) : [];
     return next;
   }
@@ -66,8 +66,8 @@
         if (r.water[key] !== '' && r.water[key] != null) r.water[key] = cleanNumber(number(r.water[key]));
       });
 
-      r.beneficiaries = (r.beneficiaries || []).map(item => isExternalWater(item.name) ? { ...item, cars: '0' } : item);
-      r.warnings = (r.warnings || []).filter(w => !(String(w).includes('بعض الجهات') && r.beneficiaries.every(item => !isExternalWater(item.name) || String(item.cars) === '0')));
+      r.beneficiaries = (r.beneficiaries || []).map(item => isExternalWater(item.name) ? { ...item, cars: 0 } : item);
+      r.warnings = (r.warnings || []).filter(w => !(String(w).includes('بعض الجهات') && r.beneficiaries.every(item => !isExternalWater(item.name) || String(item.cars) === '0' || item.cars === 0)));
       return r;
     };
 
