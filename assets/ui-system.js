@@ -62,29 +62,9 @@
     await window.FirebaseService.saveReport(next, window.firebase?.auth?.().currentUser || null, id);
   }
 
-  function patchReportUtils() {
-    if (!window.ReportUtils || window.ReportUtils.__skipWarningsPatched) return;
-    const originalRecalc = window.ReportUtils.recalc;
-    window.ReportUtils.recalc = function patchedRecalc(report) {
-      const r = originalRecalc(report);
-      const skipped = normalizeSkipped(report || r);
-      r.skippedWarnings = skipped;
-      if (Array.isArray(r.warnings) && skipped.length) {
-        r.warnings = r.warnings.filter(message => !skipped.includes(message));
-      }
-      return r;
-    };
-    window.ReportUtils.__skipWarningsPatched = true;
-  }
-
-  // patchLayout: REMOVED — skip-warnings rendering is now called directly
-  // by stableLayout via WarningSkipActions.renderWarnings(active)
-
-  function patchAll() {
-    // patchReportUtils: REMOVED — recalc() in reports-system.js already applies
-    // skippedWarnings filtering natively (r.warnings = uniqueWarnings.filter(w => !skippedWarnings.includes(w)))
-    patchLayout();
-  }
+  // patchReportUtils: REMOVED — recalc() in reports-system.js already applies
+  // skippedWarnings filtering natively (r.warnings = uniqueWarnings.filter(w => !skippedWarnings.includes(w)))
+  // patchLayout: REMOVED — skip-warnings rendering called directly by WarningSkipActions.renderWarnings()
 
   window.WarningSkipActions = {
     skip,
@@ -94,9 +74,6 @@
     openWaterFix: id => window.WarningActions?.openWaterFix?.(id),
     openBeneficiaryFix: id => window.WarningActions?.openBeneficiaryFix?.(id)
   };
-
-  patchAll();
-  window.addEventListener('DOMContentLoaded', patchAll);
 })();
 
 
