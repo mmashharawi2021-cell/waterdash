@@ -79,18 +79,8 @@
     window.ReportUtils.__stableCleanupPatched = true;
   }
 
-  function patchLayout() {
-    if (!window.AppUI || window.AppUI.__stableLayoutPatched) return;
-    const previousLayout = window.AppUI.layout;
-    window.AppUI.layout = function stableLayout(state, settings) {
-      const cleanState = {
-        ...state,
-        reports: (state?.reports || []).map(report => window.ReportUtils?.recalc ? window.ReportUtils.recalc(report) : cleanReport(report))
-      };
-      return previousLayout(cleanState, settings);
-    };
-    window.AppUI.__stableLayoutPatched = true;
-  }
+  // patchLayout: REMOVED — stableLayout in ui-system.js already maps recalc()
+  // over all reports internally (see stable-layout-reset.js L759).
 
   function fixExternalWaterRows() {
     document.querySelectorAll('#beneficiariesRows tr').forEach(row => {
@@ -144,7 +134,6 @@
 
   function patchAll() {
     patchReportUtils();
-    patchLayout();
     applyDomCleanup();
   }
 
