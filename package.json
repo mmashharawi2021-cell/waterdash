@@ -8,6 +8,7 @@
     "build": "tsc -b && vite build",
     "build:verify": "npm run build && node test_build_artifact.cjs",
     "test:emulator": "firebase emulators:exec --config firebase.emulator.json --project waterdash-emulator --only auth,firestore \"node test_emulator_auth_admin.cjs && node test_emulator_rules.cjs\"",
+    "test:emulator:browser": "firebase emulators:exec --config firebase.emulator.json --project waterdash-emulator --only auth,firestore \"node test_emulator_browser.cjs\"",
     "lint": "eslint .",
     "preview": "vite preview"
   },

@@ -205,6 +205,7 @@
         renderStableFuelSection();
       }, error => {
         console.warn('fuelEntries listener error', error);
+        state.unsubscribe = null;
         setEntries([]);
       });
     } catch (error) {
@@ -557,6 +558,17 @@
   function init() {
     if (state.observerStarted) return;
     state.observerStarted = true;
+    if (window.firebase?.auth) {
+      firebase.auth().onAuthStateChanged(user => {
+        if (user) {
+          startListener();
+          return;
+        }
+        if (state.unsubscribe) state.unsubscribe();
+        state.unsubscribe = null;
+        setEntries([]);
+      });
+    }
     window.addEventListener('DOMContentLoaded', () => setTimeout(patchDom, 300));
   }
 

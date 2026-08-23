@@ -41,6 +41,7 @@ async function main() {
   await assertFails(setDoc(doc(db('attacker'), 'users/attacker'), { role: 'admin' })); passed += 1;
   await assertFails(setDoc(doc(db('attacker'), 'users/attacker'), { role: 'superAdmin' })); passed += 1;
   await assertFails(getDoc(doc(db('attacker'), 'reports/seed'))); passed += 1;
+  await assertFails(getDoc(doc(db('invalid-claim', 'not-a-canonical-role'), 'reports/seed'))); passed += 1;
   await assertFails(setDoc(doc(db('attacker'), 'settings/main'), { unsafe: true })); passed += 1;
   await assertFails(setDoc(doc(db('attacker'), 'stations/main'), { unsafe: true })); passed += 1;
 

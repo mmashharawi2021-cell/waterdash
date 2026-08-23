@@ -220,7 +220,7 @@
 /* ==========================================
    FILE: firebase-config.js
    ========================================== */
-window.WATER_APP_FIREBASE_CONFIG = {
+window.WATER_APP_FIREBASE_CONFIG = window.WATER_APP_FIREBASE_CONFIG || {
   apiKey: "AIzaSyDSutT8QUKJDV756T3dzYD915BDS4k2Iw8",
   authDomain: "fridge-oracle-sza.firebaseapp.com",
   projectId: "fridge-oracle-sza",
