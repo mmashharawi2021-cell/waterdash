@@ -4,7 +4,7 @@
    FILE: version-guard.js
    ========================================== */
 (() => {
-  const BUILD_ID = window.WATER_APP_BUILD || '20260823-fuel-cycle-admin-082b9e2-v2';
+  const BUILD_ID = window.WATER_APP_BUILD || '20260823-auth-session-recovery-c4f2e34-v1';
   const BUILD_KEY = 'waterAppBuildId';
   const SAFE_CACHE_KEYS = [/cache/i, /snapshot/i, /lastHtml/i, /stale/i, /oldUi/i];
 
@@ -250,6 +250,9 @@ window.FirebaseService = (() => {
   let auth = null;
   let db = null;
   let emulatorConfigured = false;
+  let authTransition = 0;
+  let anonymousSignOutPending = false;
+  const listenerDiagnostics = { reportsStarted: 0, reportsStopped: 0 };
 
   function isLoopbackHost(host) {
     return host === 'localhost' || host === '127.0.0.1' || host === '::1';
@@ -310,18 +313,51 @@ window.FirebaseService = (() => {
 
   function onAuth(callback) {
     init();
-    return auth.onAuthStateChanged(async user => {
-      await window.AuthUsers?.syncFirebaseUser?.(user);
-      return callback(user);
+    return auth.onAuthStateChanged(async firebaseUser => {
+      const transition = ++authTransition;
+      if (firebaseUser?.isAnonymous) {
+        window.AuthUsers?.clearCurrentUser?.();
+        if (!anonymousSignOutPending) {
+          anonymousSignOutPending = true;
+          auth.signOut().catch(error => console.warn('Could not sign out retired anonymous session', error))
+            .finally(() => { anonymousSignOutPending = false; });
+        }
+        return callback(null, null, { anonymous: true });
+      }
+      try {
+        const tokenUser = await window.AuthUsers?.syncFirebaseUser?.(firebaseUser);
+        if (transition !== authTransition) return;
+        return callback(firebaseUser || null, tokenUser || null, {});
+      } catch (error) {
+        if (transition !== authTransition) return;
+        window.AuthUsers?.clearCurrentUser?.();
+        console.warn('Could not resolve Firebase Auth token claims', error);
+        return callback(null, null, { authError: true });
+      }
     });
   }
 
-  function listenReports(callback) {
+  function hasResolvedAuthorizedUser() {
+    const tokenUser = window.AuthUsers?.currentUser?.();
+    const firebaseUser = auth?.currentUser;
+    return Boolean(tokenUser?.active && firebaseUser && !firebaseUser.isAnonymous && firebaseUser.uid === tokenUser.uid);
+  }
+
+  function listenReports(callback, onError) {
     init();
-    return collection('reports').orderBy('reportDate', 'desc').onSnapshot(snapshot => {
+    if (!hasResolvedAuthorizedUser()) return () => {};
+    listenerDiagnostics.reportsStarted += 1;
+    let stopped = false;
+    const unsubscribe = collection('reports').orderBy('reportDate', 'desc').onSnapshot(snapshot => {
       const reports = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       callback(reports);
-    });
+    }, error => onError?.(error));
+    return () => {
+      if (stopped) return;
+      stopped = true;
+      listenerDiagnostics.reportsStopped += 1;
+      unsubscribe?.();
+    };
   }
 
   async function saveReport(report, user, existingId) {
@@ -391,7 +427,7 @@ window.FirebaseService = (() => {
 
   init();
 
-  return { isConfigured, init, signIn, signOut, onAuth, listenReports, saveReport, deleteReport, logActivity, seedSettings };
+  return { isConfigured, init, signIn, signOut, onAuth, listenReports, hasResolvedAuthorizedUser, getListenerDiagnostics: () => ({ ...listenerDiagnostics }), saveReport, deleteReport, logActivity, seedSettings };
 })();
 
 

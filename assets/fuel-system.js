@@ -16,6 +16,8 @@
     duplicates: [],
     unsubscribe: null,
     observerStarted: false,
+    listenerStarts: 0,
+    listenerStops: 0,
     editingId: null,
     saving: false,
     cycleUnsubscribe: null,
@@ -257,14 +259,25 @@
     renderStableFuelSection();
   }
 
+  function hasResolvedAuthorizedUser() {
+    const tokenUser = window.AuthUsers?.currentUser?.();
+    const firebaseUser = window.firebase?.auth?.().currentUser;
+    return Boolean(tokenUser?.active && firebaseUser && !firebaseUser.isAnonymous && firebaseUser.uid === tokenUser.uid);
+  }
+
+  function dataAccessError(source, error) {
+    console.warn(`${source} listener error`, error);
+    window.App?.dataAccessError?.(source);
+  }
+
   function startCycleListener() {
-    if (state.cycleUnsubscribe || !configured()) return;
+    if (state.cycleUnsubscribe || !configured() || !hasResolvedAuthorizedUser()) return;
+    state.listenerStarts += 1;
     state.cycleUnsubscribe = db().collection(CYCLE_SETTINGS_COLLECTION).doc(CYCLE_SETTINGS_DOC).onSnapshot(snapshot => {
       setCycleConfig(snapshot.exists ? snapshot.data() : null);
     }, error => {
-      console.warn('fuel cycle listener error', error);
       state.cycleUnsubscribe = null;
-      setCycleConfig(null);
+      dataAccessError('إعدادات دورة الوقود', error);
     });
   }
 
@@ -387,18 +400,42 @@
   }
 
   function startListener() {
-    if (state.unsubscribe || !configured()) return;
+    if (state.unsubscribe || !configured() || !hasResolvedAuthorizedUser()) return;
     try {
+      state.listenerStarts += 1;
       state.unsubscribe = db().collection(COLLECTION).orderBy('date', 'desc').onSnapshot(snapshot => {
         setEntries(snapshot.docs.map(normalize));
         renderStableFuelSection();
       }, error => {
-        console.warn('fuelEntries listener error', error);
         state.unsubscribe = null;
-        setEntries([]);
+        dataAccessError('سجل الوقود', error);
       });
     } catch (error) {
-      console.warn('Could not start fuelEntries listener', error);
+      dataAccessError('سجل الوقود', error);
+    }
+  }
+
+  function startProtectedListeners() {
+    if (!hasResolvedAuthorizedUser()) return false;
+    startListener();
+    startCycleListener();
+    return true;
+  }
+
+  function stopProtectedListeners({ clear = false } = {}) {
+    if (state.unsubscribe) {
+      state.unsubscribe();
+      state.unsubscribe = null;
+      state.listenerStops += 1;
+    }
+    if (state.cycleUnsubscribe) {
+      state.cycleUnsubscribe();
+      state.cycleUnsubscribe = null;
+      state.listenerStops += 1;
+    }
+    if (clear) {
+      state.cycle = { startDate: DEFAULT_FUEL_CYCLE_START, revision: 0, loaded: false, modal: null };
+      setEntries([]);
     }
   }
 
@@ -735,7 +772,6 @@
   }
 
   function patchDom() {
-    startListener();
     ensureHeroButtons();
     ensureFuelSection();
   }
@@ -743,21 +779,6 @@
   function init() {
     if (state.observerStarted) return;
     state.observerStarted = true;
-    if (window.firebase?.auth) {
-      firebase.auth().onAuthStateChanged(user => {
-        if (user) {
-          startListener();
-          startCycleListener();
-          return;
-        }
-        if (state.unsubscribe) state.unsubscribe();
-        if (state.cycleUnsubscribe) state.cycleUnsubscribe();
-        state.unsubscribe = null;
-        state.cycleUnsubscribe = null;
-        state.cycle = { startDate: DEFAULT_FUEL_CYCLE_START, revision: 0, loaded: false, modal: null };
-        setEntries([]);
-      });
-    }
     window.addEventListener('DOMContentLoaded', () => setTimeout(patchDom, 300));
   }
 
@@ -823,6 +844,9 @@
     closeExportCenter,
     toggleMoreMenu,
     patchDom,
+    startProtectedListeners,
+    stopProtectedListeners,
+    getListenerDiagnostics: () => ({ starts: state.listenerStarts, stops: state.listenerStops, active: Number(Boolean(state.unsubscribe)) + Number(Boolean(state.cycleUnsubscribe)) }),
     toggleFuelFields,
     renderStableFuelSection,
     getAccounting,

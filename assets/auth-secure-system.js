@@ -33,6 +33,12 @@ window.AuthUsers = (() => {
       clearCurrentUser();
       return null;
     }
+    // Anonymous Auth belonged to the retired browser-auth flow. It is never a
+    // WATERDASH application identity and must not be allowed to unlock reads.
+    if (firebaseUser.isAnonymous) {
+      clearCurrentUser();
+      return null;
+    }
     // RBAC is derived only from the current Firebase custom claim.  Refresh at
     // each auth-state transition so a newly assigned canonical role cannot be
     // rendered from a stale cached ID token.

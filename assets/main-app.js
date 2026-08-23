@@ -120,7 +120,10 @@ window.App = (() => {
     formStep: 1,
     sidebarPinned: localStorage.getItem('sidebarPinned') === 'true',
     dashboardDateRange: 'all',
-    dashboardStation: 'all'
+    dashboardStation: 'all',
+    phase: 'unauthenticated',
+    authNotice: '',
+    accessError: null
   };
 
   function loadLocalSettings() {
@@ -242,8 +245,16 @@ window.App = (() => {
     // Sort logic
     state.reports = [...state.reports].sort((a, b) => b.reportDate.localeCompare(a.reportDate));
 
+    if (state.phase === 'authenticating') {
+      setHtml(window.AppUI.skeleton());
+      return;
+    }
+    if (state.accessError) {
+      setHtml(`<main class="login-screen premium-login"><section class="login-visual"><div class="well-mark">⚠️</div><p class="eyebrow">حماية البيانات</p><h1>تعذر تحميل بيانات التشغيل</h1></section><section class="login-card"><p class="eyebrow">خطأ وصول</p><h2>لم تُعرض أي قيم بديلة</h2><p class="muted">تم التحقق من تسجيل الدخول، لكن تعذر الوصول إلى ${state.accessError}. لم يتم اعتبار البيانات الفعلية أصفارًا.</p><button class="btn primary big" type="button" onclick="App.logout(true)">تسجيل الخروج والمحاولة مجددًا</button></section></main>`);
+      return;
+    }
     if (!state.user) {
-      setHtml(window.AppUI.login(window.firebase?.firestore));
+      setHtml(window.AppUI.login(window.firebase?.firestore, state.authNotice));
       return;
     }
     setHtml(window.AppUI.layout(state, state.settings));
@@ -364,15 +375,33 @@ window.App = (() => {
 
   async function loadRemoteSettings(user) {
     try {
-      if (!user || !window.firebase?.firestore) return;
+      if (!user?.active || !window.firebase?.firestore) return false;
       const snap = await firebase.firestore().collection('settings').doc('main').get();
-      if (!snap.exists) return;
+      if (!snap.exists) return true;
       const data = snap.data() || {};
       state.settings = { ...state.settings, ...data, beneficiaries: Array.isArray(data.beneficiaries) ? data.beneficiaries : state.settings.beneficiaries };
       localStorage.setItem(SETTINGS_KEY, JSON.stringify(state.settings));
+      return true;
     } catch (error) {
       console.warn('Could not load remote settings', error);
+      return false;
     }
+  }
+
+  function stopProtectedData({ clear = false } = {}) {
+    if (state.unsubscribe) {
+      state.unsubscribe();
+      state.unsubscribe = null;
+    }
+    window.WaterFuel?.stopProtectedListeners?.({ clear });
+    if (clear) window.__WATER_REPORTS_CACHE__ = [];
+  }
+
+  function dataAccessError(source) {
+    stopProtectedData();
+    state.accessError = source || 'بيانات التشغيل';
+    state.phase = 'error';
+    render();
   }
 
   function start() {
@@ -380,23 +409,40 @@ window.App = (() => {
       setHtml(window.AppUI.login(false));
       return;
     }
-    setHtml(window.AppUI.skeleton());
-    window.FirebaseService.onAuth(async user => {
-      state.user = user;
-      if (!user) {
-        if (state.unsubscribe) state.unsubscribe();
+    state.phase = 'authenticating';
+    render();
+    window.FirebaseService.onAuth(async (firebaseUser, tokenUser, authState) => {
+      stopProtectedData({ clear: true });
+      state.accessError = null;
+      state.authNotice = '';
+      if (!firebaseUser || !tokenUser?.active) {
+        state.user = null;
         state.currentId = null;
-        setHtml(window.AppUI.login(true));
+        state.phase = 'unauthenticated';
+        if (authState?.anonymous) state.authNotice = 'انتهت جلسة مجهولة قديمة. سجّل الدخول بالبريد الإلكتروني المعتمد.';
+        else if (tokenUser && !tokenUser.active) state.authNotice = 'هذا الحساب لا يملك دور WATERDASH معتمدًا.';
+        else if (authState?.authError) state.authNotice = 'تعذر التحقق من صلاحية الجلسة. سجّل الدخول مرة أخرى.';
+        render();
         return;
       }
-      window.ThemeManager?.loadUserTheme(user);
-      await loadRemoteSettings(user);
-      if (state.unsubscribe) state.unsubscribe();
+      state.user = tokenUser;
+      state.phase = 'authenticating';
+      render();
+      window.ThemeManager?.loadUserTheme(firebaseUser);
+      if (!await loadRemoteSettings(tokenUser)) {
+        dataAccessError('الإعدادات الرئيسية');
+        return;
+      }
       state.unsubscribe = window.FirebaseService.listenReports(reports => {
         state.reports = reports;
+        window.__WATER_REPORTS_CACHE__ = reports;
         if (state.currentId && !reports.some(item => item.id === state.currentId)) state.currentId = null;
+        state.phase = 'ready';
         render();
+      }, () => {
+        dataAccessError('التقارير');
       });
+      window.WaterFuel?.startProtectedListeners?.();
     });
   }
 
@@ -414,9 +460,13 @@ window.App = (() => {
     }
   }
 
-  async function logout() {
-    const ok = await confirmDialog({ title: 'تسجيل الخروج', message: 'هل تريد الخروج من النظام؟', confirmText: 'خروج', cancelText: 'بقاء' });
+  async function logout(skipConfirmation = false) {
+    const ok = skipConfirmation || await confirmDialog({ title: 'تسجيل الخروج', message: 'هل تريد الخروج من النظام؟', confirmText: 'خروج', cancelText: 'بقاء' });
     if (!ok) return;
+    stopProtectedData({ clear: true });
+    state.user = null;
+    state.phase = 'unauthenticated';
+    state.accessError = null;
     await window.FirebaseService.signOut();
     toast('تم تسجيل الخروج', 'ok');
   }
@@ -961,7 +1011,7 @@ window.App = (() => {
     toast('تم استرجاع الإعدادات الافتراضية', 'ok');
   }
 
-  return { state, start, login, logout, render, select, openNew, duplicateLastReport, openEdit, closeModal, togglePaste, parseText, addBeneficiary, addBeneficiaryTemplate, applyBeneficiaryTemplates, clearBeneficiaryAmounts, removeBeneficiary, saveReport, deleteReport, copyWhatsApp, exportPdf, exportOneExcel, exportAllExcel, exportFilteredExcel, exportFilteredWhatsApp, exportFilteredWord, exportFilteredPDF, exportFilteredImage, goHome, goReports, goExport, goFuel, openSettings, closeSettings, saveSettings, resetSettings, setUIFilter, getUIFilter, nextStep, prevStep, setStep, toggleSidebar, toggleTheme, hardRefresh, setDashboardDateRange, setDashboardStation, openExplainModal };
+  return { state, start, login, logout, render, stopProtectedData, dataAccessError, select, openNew, duplicateLastReport, openEdit, closeModal, togglePaste, parseText, addBeneficiary, addBeneficiaryTemplate, applyBeneficiaryTemplates, clearBeneficiaryAmounts, removeBeneficiary, saveReport, deleteReport, copyWhatsApp, exportPdf, exportOneExcel, exportAllExcel, exportFilteredExcel, exportFilteredWhatsApp, exportFilteredWord, exportFilteredPDF, exportFilteredImage, goHome, goReports, goExport, goFuel, openSettings, closeSettings, saveSettings, resetSettings, setUIFilter, getUIFilter, nextStep, prevStep, setStep, toggleSidebar, toggleTheme, hardRefresh, setDashboardDateRange, setDashboardStation, openExplainModal };
 })();
 
 window.addEventListener('DOMContentLoaded', () => window.App.start());
