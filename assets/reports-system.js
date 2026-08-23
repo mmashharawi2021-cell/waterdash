@@ -262,31 +262,30 @@ window.ReportUtils = (() => {
     }
 
     // Fuel calculations
-    const fuelRate = Number(window.WATER_APP_SETTINGS?.fuelRate) || 19;
-    if (r.fuel.consumedDaily === '' || r.fuel.consumedDaily == null) {
-      if (runHoursDecimal > 0) {
-        r.fuel.consumedDaily = round(runHoursDecimal * fuelRate);
-      }
+    if (window.WaterFuel?.getAccounting) {
+      r.fuel = { ...r.fuel, ...window.WaterFuel.getAccounting(r) };
     } else {
-      r.fuel.consumedDaily = number(r.fuel.consumedDaily) ? round(number(r.fuel.consumedDaily)) : r.fuel.consumedDaily;
-    }
-
-    ['addedDaily', 'municipalSupplied', 'previousBalance', 'currentBalance', 'loss'].forEach(k => {
-      if (r.fuel[k] !== '' && r.fuel[k] != null) {
-        r.fuel[k] = round(number(r.fuel[k]));
+      // Fallback if fuel-system is not loaded
+      const fuelRate = Number(window.WATER_APP_SETTINGS?.fuelRate) || 19;
+      if (r.fuel.consumedDaily === '' || r.fuel.consumedDaily == null) {
+        if (runHoursDecimal > 0) {
+          r.fuel.consumedDaily = round(runHoursDecimal * fuelRate);
+        }
+      } else {
+        r.fuel.consumedDaily = number(r.fuel.consumedDaily) ? round(number(r.fuel.consumedDaily)) : r.fuel.consumedDaily;
       }
-    });
-
-    const prev = number(r.fuel.previousBalance);
-    const added = number(r.fuel.addedDaily);
-    const municipal = number(r.fuel.municipalSupplied);
-    const consumed = number(r.fuel.consumedDaily);
-    const current = number(r.fuel.currentBalance);
-
-    if (prev < 0) r.fuel.previousBalance = '';
-    if (current < 0 && !prev && !added && !municipal) {
-      r.fuel.currentBalance = '';
-      r.fuel.loss = '';
+      
+      ['addedDaily', 'municipalSupplied', 'previousBalance', 'currentBalance', 'loss'].forEach(k => {
+        if (r.fuel[k] !== '' && r.fuel[k] != null) {
+          r.fuel[k] = round(number(r.fuel[k]));
+        }
+      });
+      
+      if (number(r.fuel.previousBalance) < 0) r.fuel.previousBalance = '';
+      if (number(r.fuel.currentBalance) < 0) {
+        r.fuel.currentBalance = '';
+        r.fuel.loss = '';
+      }
     }
 
     // Build warnings

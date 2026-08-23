@@ -515,6 +515,56 @@
     window.addEventListener('DOMContentLoaded', () => setTimeout(patchDom, 300));
   }
 
+  function getAccounting(report) {
+    if (!report) return {};
+    const f = report.fuel || {};
+    
+    let repConsumed = '';
+    const fuelRate = Number(window.WATER_APP_SETTINGS?.fuelRate) || 19;
+    if (f.consumedDaily === '' || f.consumedDaily == null) {
+      const [h, m = 0] = String(report.generator?.totalRunHours || '0:0').split(':').map(Number);
+      const decHours = (Number(h) || 0) + ((Number(m) || 0) / 60);
+      if (decHours > 0) {
+        repConsumed = String(+Number(decHours * fuelRate).toFixed(2));
+      }
+    } else {
+      const nCons = num(f.consumedDaily);
+      if (nCons > 0) repConsumed = String(+nCons.toFixed(2));
+    }
+    
+    let prev = '';
+    let current = '';
+    const p = num(f.previousBalance);
+    const c = num(f.currentBalance);
+    
+    if (f.previousBalance !== '' && f.previousBalance != null && p >= 0) {
+      prev = String(+p.toFixed(2));
+    }
+    if (f.currentBalance !== '' && f.currentBalance != null && c >= 0) {
+      current = String(+c.toFixed(2));
+    }
+    
+    let added = '';
+    if (f.addedDaily !== '' && f.addedDaily != null) added = String(+num(f.addedDaily).toFixed(2));
+    let municipal = '';
+    if (f.municipalSupplied !== '' && f.municipalSupplied != null) municipal = String(+num(f.municipalSupplied).toFixed(2));
+    let loss = '';
+    if (f.loss !== '' && f.loss != null) loss = String(+num(f.loss).toFixed(2));
+
+    return {
+      cycleStart: null,
+      incoming: null,
+      consumed: null,
+      balance: null,
+      consumedDaily: repConsumed,
+      previousBalance: prev,
+      currentBalance: current,
+      addedDaily: added,
+      municipalSupplied: municipal,
+      loss: loss
+    };
+  }
+
   window.WaterFuel = {
     openFuelModal,
     closeFuelModal,
@@ -528,7 +578,8 @@
     toggleMoreMenu,
     patchDom,
     toggleFuelFields,
-    renderStableFuelSection
+    renderStableFuelSection,
+    getAccounting
   };
 
   window.FuelSourceFix = {
