@@ -524,7 +524,7 @@ window.UsersUI = (() => {
     patchAppGuards();
   }
 
+  // DOMContentLoaded is sufficient — App is defined synchronously before this fires.
+  // 'load' listener and setTimeout(boot, 500): REMOVED (redundant, __permissionGuardsPatched guards re-entry)
   window.addEventListener('DOMContentLoaded', boot);
-  window.addEventListener('load', boot);
-  setTimeout(boot, 500);
 })();

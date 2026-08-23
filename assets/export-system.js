@@ -24,20 +24,12 @@
   function reset(){S.cat='reports';S.type='allReports';S.rows=[];render()}
   function open(){render()}
   window.ExportV4={open,close,reset,render,preview:()=>window.ExportV4Runner?.preview(),state:S,types:TYPES,esc,status,today,ym};
-  if(window.WaterFuel)window.WaterFuel.openExportCenter=open;
-  // ربط صريح عند DOMContentLoaded وعند load
-  function bindWaterFuel() {
-    if (window.WaterFuel) {
-      window.WaterFuel.openExportCenter = open;
-      window.WaterFuel.closeExportCenter = close;
-      window.WaterFuel.executeExport = open;
-    }
+  // WaterFuel.openExportCenter/closeExportCenter: already defined in fuel-system.js
+  // bindWaterFuel polling (DCL + load + 500ms + 1500ms): REMOVED — not needed
+  if(window.WaterFuel) {
+    window.WaterFuel.openExportCenter = open;
+    window.WaterFuel.closeExportCenter = close;
   }
-  window.addEventListener('DOMContentLoaded', bindWaterFuel);
-  window.addEventListener('load', bindWaterFuel);
-  // تأكد بعد 500ms و 1500ms بعد أن تتم التهيئة
-  setTimeout(bindWaterFuel, 500);
-  setTimeout(bindWaterFuel, 1500);
 })();
 
 /* ==========================================

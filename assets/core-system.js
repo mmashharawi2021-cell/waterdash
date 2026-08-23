@@ -294,8 +294,13 @@ window.FirebaseService = (() => {
 
   async function saveReport(report, user, existingId) {
     init();
+    // Apply recalc (includes date normalization) if available — integrated from date-save-patch
+    const normalized = (window.ReportUtils?.recalc) ? window.ReportUtils.recalc(report) : report;
+    if (normalized?.reportDate && window.ReportUtils?.normalizeDateInput) {
+      normalized.reportDate = window.ReportUtils.normalizeDateInput(normalized.reportDate);
+    }
     const payload = {
-      ...report,
+      ...normalized,
       updatedAt: now(),
       updatedBy: window.WATER_APP_SETTINGS.defaultUserName
     };

@@ -62,49 +62,9 @@
     await window.FirebaseService.saveReport(next, window.firebase?.auth?.().currentUser || null, id);
   }
 
-  function patchReportUtils() {
-    if (!window.ReportUtils || window.ReportUtils.__skipWarningsPatched) return;
-    const originalRecalc = window.ReportUtils.recalc;
-    window.ReportUtils.recalc = function patchedRecalc(report) {
-      const r = originalRecalc(report);
-      const skipped = normalizeSkipped(report || r);
-      r.skippedWarnings = skipped;
-      if (Array.isArray(r.warnings) && skipped.length) {
-        r.warnings = r.warnings.filter(message => !skipped.includes(message));
-      }
-      return r;
-    };
-    window.ReportUtils.__skipWarningsPatched = true;
-  }
-
-  function patchLayout() {
-    if (!window.AppUI || window.AppUI.__skipWarningsLayoutPatched) return;
-    const previousLayout = window.AppUI.layout;
-    window.AppUI.layout = function patchedSkipWarningsLayout(state, settings) {
-      const reports = state?.reports || [];
-      const active = reports.find(r => r.id === state.currentId) || null;
-      let html = previousLayout(state, settings);
-      if (!active) return html;
-      const replacement = renderWarnings(active);
-      if (html.includes('smart-warnings')) {
-        html = html.replace(/<div class="smart-warnings[\s\S]*?<\/div>\s*<\/div>/, replacement);
-      } else if (replacement) {
-        html = html.replace('<div class="detail-grid">', `${replacement}<div class="detail-grid">`);
-      }
-      const skippedCount = normalizeSkipped(active).length;
-      if (skippedCount && html.includes('<div class="detail-grid">')) {
-        const restore = `<div class="skipped-warning-note"><span>تم تخطي ${skippedCount} تنبيه في هذا التقرير.</span><button class="btn ghost" onclick="WarningSkipActions.unskipAll('${active.id}')">إظهار التنبيهات المخفية</button></div>`;
-        html = html.replace('<div class="detail-grid">', `${restore}<div class="detail-grid">`);
-      }
-      return html;
-    };
-    window.AppUI.__skipWarningsLayoutPatched = true;
-  }
-
-  function patchAll() {
-    patchReportUtils();
-    patchLayout();
-  }
+  // patchReportUtils: REMOVED — recalc() in reports-system.js already applies
+  // skippedWarnings filtering natively (r.warnings = uniqueWarnings.filter(w => !skippedWarnings.includes(w)))
+  // patchLayout: REMOVED — skip-warnings rendering called directly by WarningSkipActions.renderWarnings()
 
   window.WarningSkipActions = {
     skip,
@@ -114,32 +74,10 @@
     openWaterFix: id => window.WarningActions?.openWaterFix?.(id),
     openBeneficiaryFix: id => window.WarningActions?.openBeneficiaryFix?.(id)
   };
-
-  patchAll();
-  window.addEventListener('DOMContentLoaded', patchAll);
 })();
 
 
-/* ==========================================
-   FILE: date-save-patch.js
-   ========================================== */
-(() => {
-  function patchFirebaseSaveDate() {
-    if (!window.FirebaseService || window.FirebaseService.__dateNormalizePatched) return;
-    const originalSave = window.FirebaseService.saveReport;
-    window.FirebaseService.saveReport = function patchedSaveReport(report, user, existingId) {
-      const normalized = window.ReportUtils?.recalc ? window.ReportUtils.recalc(report) : report;
-      if (normalized?.reportDate && window.ReportUtils?.normalizeDateInput) {
-        normalized.reportDate = window.ReportUtils.normalizeDateInput(normalized.reportDate);
-      }
-      return originalSave.call(window.FirebaseService, normalized, user, existingId);
-    };
-    window.FirebaseService.__dateNormalizePatched = true;
-  }
-
-  patchFirebaseSaveDate();
-  window.addEventListener('DOMContentLoaded', patchFirebaseSaveDate);
-})();
+/* date-save-patch: CONSOLIDATED into FirebaseService.saveReport in core-system.js */
 
 
 /* ==========================================
@@ -464,23 +402,11 @@ window.AppUI = (() => {
     window.FirebaseService.__startupStabilityPatched = true;
   }
 
-  function patchLayoutSafety() {
-    if (!window.AppUI || window.AppUI.__layoutSafetyPatched) return;
-    const originalLayout = window.AppUI.layout;
-    window.AppUI.layout = function safeLayout(state, settings) {
-      try {
-        return originalLayout(state, settings);
-      } catch (error) {
-        console.error('Layout render failed:', error);
-        return `<main class="app-shell"><header class="hero"><div><p class="eyebrow">لوحة التشغيل</p><h1>نظام تقارير تشغيل وضخ المياه</h1><p>تم فتح اللوحة بوضع آمن بسبب خطأ مؤقت في الواجهة.</p></div><div class="hero-actions"><button class="btn primary big" onclick="location.reload()">إعادة تحميل</button><button class="btn" onclick="App.logout()">خروج</button></div></header><section class="cards-section"><h2>تعذر عرض البيانات مؤقتًا</h2><p>أعد تحميل الصفحة. إذا تكرر الخطأ، يتم فحص آخر تعديل في الواجهة.</p></section></main>`;
-      }
-    };
-    window.AppUI.__layoutSafetyPatched = true;
-  }
+  // patchLayoutSafety: REMOVED — safety try/catch is now integrated into
+  // the stableLayout assignment inside stable-layout-reset.
 
   function boot() {
     patchListenReports();
-    patchLayoutSafety();
   }
 
   boot();
@@ -1164,10 +1090,25 @@ window.AppUI = (() => {
   }
 
 
+  const SAFE_FALLBACK_HTML = `<main class="app-shell"><header class="hero"><div><p class="eyebrow">لوحة التشغيل</p><h1>نظام تقارير تشغيل وضخ المياه</h1><p>تم فتح اللوحة بوضع آمن بسبب خطأ مؤقت في الواجهة.</p></div><div class="hero-actions"><button class="btn primary big" onclick="location.reload()">إعادة تحميل</button><button class="btn" onclick="App.logout()">خروج</button></div></header><section class="cards-section"><h2>تعذر عرض البيانات مؤقتًا</h2><p>أعد تحميل الصفحة. إذا تكرر الخطأ، يتم فحص آخر تعديل في الواجهة.</p></section></main>`;
+
+  function safeStableLayout(state, settings) {
+    // Single authoritative layout: includes safety wrapper + skip-warnings + warning-actions
+    try {
+      return stableLayout(state, settings);
+    } catch (error) {
+      console.error('Layout render failed:', error);
+      return SAFE_FALLBACK_HTML;
+    }
+  }
+
   function patch() {
     if (!window.AppUI) return;
-    window.AppUI.layout = stableLayout;
+    window.AppUI.layout = safeStableLayout;
     window.AppUI.__layoutResetPatched = true;
+    window.AppUI.__layoutSafetyPatched = true;   // signal: safety already integrated
+    window.AppUI.__skipWarningsLayoutPatched = true; // signal: handled by WarningSkipActions
+    window.AppUI.__warningActionsPatched = true;  // signal: warning-actions integrated
   }
 
   patch();
@@ -1393,22 +1334,9 @@ window.AppUI = (() => {
     closeModal();
   }
 
-  function patchDetails() {
-    if (!window.AppUI || window.AppUI.__warningActionsPatched) return;
-    const originalLayout = window.AppUI.layout;
-    window.AppUI.layout = function patchedLayout(state, settings) {
-      let html = originalLayout(state, settings);
-      const reports = state?.reports || [];
-      const active = reports.find(r => r.id === state.currentId);
-      if (!active) return html;
-      const oldWarning = html.match(/<div class="notice warn">[\s\S]*?<\/div>/);
-      if (oldWarning) html = html.replace(oldWarning[0], renderWarnings(active));
-      return html;
-    };
-    window.AppUI.__warningActionsPatched = true;
-  }
-
-  patchDetails();
+  // patchDetails: REMOVED — warning-actions layout override is no longer needed.
+  // AppUI.__warningActionsPatched is now set by stable-layout-reset patch().
+  // WarningActions still exposed for UI button handlers (openWaterFix, etc.)
 
   window.WarningActions = { renderWarnings, openWaterFix, saveWaterFix, openBeneficiaryFix, saveBeneficiaryFix, closeModal };
 })();

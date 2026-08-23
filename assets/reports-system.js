@@ -303,7 +303,12 @@ window.ReportUtils = (() => {
 
     const uniqueWarnings = [...new Set(warnings)];
     r.skippedWarnings = skippedWarnings;
-    r.warnings = uniqueWarnings.filter(w => !skippedWarnings.includes(w));
+    // Filter 'بعض الجهات' warning when all external-water beneficiaries already have cars=0
+    // (integrated from stable-cleanup.js)
+    r.warnings = uniqueWarnings
+      .filter(w => !(String(w).includes('بعض الجهات') &&
+        r.beneficiaries.every(item => !isExternalWater(item.name) || String(item.cars) === '0' || item.cars === 0)))
+      .filter(w => !skippedWarnings.includes(w));
 
     return r;
   }
@@ -407,7 +412,8 @@ window.ReportUtils = (() => {
     totals.recoveryRate = totals.totalInputWater ? round((totals.waterProduction / totals.totalInputWater) * 100) : 0;
     totals.rejectRatePercentage = totals.totalInputWater ? round((totals.rejectWater / totals.totalInputWater) * 100) : 0;
 
-    return totals;
+    // Ensure all numeric values are clean (integrated from stable-cleanup.js)
+    return Object.fromEntries(Object.entries(totals).map(([k, v]) => [k, typeof v === 'number' ? round(v) : v]));
   }
 
   return {
