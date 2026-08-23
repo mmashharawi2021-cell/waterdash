@@ -1,9 +1,9 @@
-/* --- Auto-Generated Module: auth-system.js --- */
+/* --- Unified Module: auth-system.js --- */
 
 /* ==========================================
-   FILE: users-auth.js
+   Authoritative Authentication & RBAC System
    ========================================== */
-(() => {
+window.AuthUsers = (() => {
   const USERS_COLLECTION = 'users';
   const USER_KEY = 'waterAppCurrentUser';
 
@@ -108,8 +108,14 @@
   }
 
   function setCurrentUser(user) {
-    const normalized = normalizeUser(user || {});
-    localStorage.setItem(USER_KEY, JSON.stringify(normalized));
+    if (!user) {
+      clearCurrentUser();
+      return null;
+    }
+    const normalized = normalizeUser(user);
+    try {
+      localStorage.setItem(USER_KEY, JSON.stringify(normalized));
+    } catch {}
     window.WaterCurrentUser = normalized;
     return normalized;
   }
@@ -118,13 +124,33 @@
     if (window.WaterCurrentUser) return window.WaterCurrentUser;
     try {
       const saved = JSON.parse(localStorage.getItem(USER_KEY) || 'null');
-      if (saved) return setCurrentUser(saved);
+      if (saved) {
+        window.WaterCurrentUser = normalizeUser(saved);
+        return window.WaterCurrentUser;
+      }
     } catch {}
+
+    const authUser = window.firebase?.auth?.().currentUser;
+    if (authUser) {
+      const username = window.WATER_APP_SETTINGS?.defaultUserName || 'صالح الدحنون';
+      const defaultAdmin = {
+        id: 'local-default-admin',
+        fullName: username,
+        username,
+        role: 'superAdmin',
+        roleLabel: 'مدير النظام',
+        active: true,
+        permissions: ROLE_DEFINITIONS.superAdmin.permissions
+      };
+      return setCurrentUser(defaultAdmin);
+    }
     return null;
   }
 
   function clearCurrentUser() {
-    localStorage.removeItem(USER_KEY);
+    try {
+      localStorage.removeItem(USER_KEY);
+    } catch {}
     window.WaterCurrentUser = null;
   }
 
@@ -138,11 +164,19 @@
   function requirePermission(permission, label = 'هذا الإجراء') {
     if (hasPermission(permission)) return true;
     window.App?.toast?.('لا تملك صلاحية: ' + label, 'warn');
-    alert('لا تملك صلاحية تنفيذ هذا الإجراء.');
+    alert('لا تملك صلاحية تنفيذ هذا الإجراء: ' + label);
     return false;
   }
 
+  async function ensureAnonymousAuth() {
+    window.FirebaseService?.init?.();
+    const auth = firebase.auth();
+    if (!auth.currentUser) await auth.signInAnonymously();
+    return auth.currentUser;
+  }
+
   async function ensureDefaultAdmin() {
+    await ensureAnonymousAuth();
     const settings = window.WATER_APP_SETTINGS || {};
     const username = settings.defaultUserName || 'صالح الدحنون';
     const ref = db().collection(USERS_COLLECTION);
@@ -166,6 +200,7 @@
   }
 
   async function findUserByUsername(username) {
+    await ensureAnonymousAuth();
     const snap = await db().collection(USERS_COLLECTION).where('username', '==', String(username || '').trim()).limit(1).get();
     if (snap.empty) return null;
     const doc = snap.docs[0];
@@ -173,7 +208,7 @@
   }
 
   async function signIn(username, password) {
-    window.FirebaseService?.init?.();
+    await ensureAnonymousAuth();
     await ensureDefaultAdmin();
     const user = await findUserByUsername(username);
     if (!user || user.active === false) throw new Error('بيانات الدخول غير صحيحة أو المستخدم غير فعال.');
@@ -183,16 +218,15 @@
     if (!ok) throw new Error('بيانات الدخول غير صحيحة.');
 
     const normalized = setCurrentUser(user);
-    const auth = firebase.auth();
-    if (!auth.currentUser) await auth.signInAnonymously();
     await db().collection('activityLogs').add({
       actionType: 'login',
       userName: normalized.fullName,
       userRole: normalized.roleLabel,
-      authUid: auth.currentUser?.uid || null,
+      authUid: firebase.auth().currentUser?.uid || null,
       timestamp: firebase.firestore.FieldValue.serverTimestamp()
     }).catch(console.warn);
-    return auth.currentUser;
+
+    return firebase.auth().currentUser;
   }
 
   async function signOut() {
@@ -258,52 +292,7 @@
     await db().collection(USERS_COLLECTION).doc(id).delete();
   }
 
-  function patchFirebaseService() {
-    if (!window.FirebaseService || window.FirebaseService.__usersPatched) return;
-    const original = window.FirebaseService;
-    const originalSaveReport = original.saveReport;
-    const originalDeleteReport = original.deleteReport;
-    original.signIn = signIn;
-    original.signOut = signOut;
-    original.listUsers = listUsers;
-    original.saveUser = saveUser;
-    original.setUserActive = setUserActive;
-    original.deleteUser = deleteUser;
-    original.ensureDefaultAdmin = ensureDefaultAdmin;
-    original.currentAppUser = currentUser;
-
-    original.saveReport = async function patchedSaveReport(report, authUser, existingId) {
-      const appUser = currentUser();
-      const payload = {
-        ...report,
-        updatedBy: appUser?.fullName || report.updatedBy || '',
-        updatedByRole: appUser?.roleLabel || appUser?.role || ''
-      };
-      const id = await originalSaveReport.call(original, payload, authUser, existingId);
-      await db().collection('reports').doc(id).set({
-        updatedBy: appUser?.fullName || '',
-        updatedByRole: appUser?.roleLabel || appUser?.role || '',
-        createdBy: existingId ? firebase.firestore.FieldValue.delete() : (appUser?.fullName || '')
-      }, { merge: true }).catch(console.warn);
-      return id;
-    };
-
-    original.deleteReport = async function patchedDeleteReport(id, authUser) {
-      const appUser = currentUser();
-      await originalDeleteReport.call(original, id, authUser);
-      await db().collection('activityLogs').add({
-        actionType: 'delete-report-by-user',
-        userName: appUser?.fullName || '',
-        userRole: appUser?.roleLabel || appUser?.role || '',
-        reportId: id,
-        timestamp: firebase.firestore.FieldValue.serverTimestamp()
-      }).catch(console.warn);
-    };
-
-    original.__usersPatched = true;
-  }
-
-  window.AuthUsers = {
+  return {
     ROLE_DEFINITIONS,
     PERMISSION_LABELS,
     currentUser,
@@ -312,6 +301,8 @@
     hasPermission,
     requirePermission,
     hashPassword,
+    signIn,
+    signOut,
     listUsers,
     saveUser,
     setUserActive,
@@ -319,206 +310,12 @@
     ensureDefaultAdmin,
     normalizeUser
   };
-
-  patchFirebaseService();
-  window.addEventListener('DOMContentLoaded', patchFirebaseService);
 })();
 
-
 /* ==========================================
-   FILE: users-login-fix.js
+   Users UI Management Module
    ========================================== */
-(() => {
-  async function ensureAnonymousAuth() {
-    window.FirebaseService?.init?.();
-    const auth = firebase.auth();
-    if (!auth.currentUser) await auth.signInAnonymously();
-    return auth.currentUser;
-  }
-
-  async function hashPassword(password) {
-    if (window.AuthUsers?.hashPassword) return window.AuthUsers.hashPassword(password);
-    const raw = new TextEncoder().encode(String(password || ''));
-    const digest = await crypto.subtle.digest('SHA-256', raw);
-    return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, '0')).join('');
-  }
-
-  function db() {
-    window.FirebaseService?.init?.();
-    return firebase.firestore();
-  }
-
-  async function ensureDefaultAdminFixed() {
-    await ensureAnonymousAuth();
-    const settings = window.WATER_APP_SETTINGS || {};
-    const username = settings.defaultUserName || 'صالح الدحنون';
-    const ref = db().collection('users');
-    const snap = await ref.where('username', '==', username).limit(1).get();
-    if (!snap.empty) {
-      return window.AuthUsers.normalizeUser(snap.docs[0]);
-    }
-
-    const payload = {
-      fullName: username,
-      username,
-      passwordHash: await hashPassword(username),
-      role: 'superAdmin',
-      active: true,
-      permissions: window.AuthUsers.ROLE_DEFINITIONS.superAdmin.permissions,
-      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-      updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
-      createdBy: 'system'
-    };
-    const doc = await ref.add(payload);
-    return window.AuthUsers.normalizeUser({ id: doc.id, ...payload });
-  }
-
-  async function findUserByUsernameFixed(username) {
-    await ensureAnonymousAuth();
-    const snap = await db().collection('users').where('username', '==', String(username || '').trim()).limit(1).get();
-    if (snap.empty) return null;
-    const doc = snap.docs[0];
-    return { id: doc.id, ...doc.data() };
-  }
-
-  async function signInFixed(username, password) {
-    await ensureAnonymousAuth();
-    await ensureDefaultAdminFixed();
-
-    const user = await findUserByUsernameFixed(username);
-    if (!user || user.active === false) throw new Error('بيانات الدخول غير صحيحة أو المستخدم غير فعال.');
-
-    const incomingHash = await hashPassword(password);
-    const ok = user.passwordHash ? incomingHash === user.passwordHash : String(password) === String(user.password || '');
-    if (!ok) throw new Error('بيانات الدخول غير صحيحة.');
-
-    const normalized = window.AuthUsers.setCurrentUser(user);
-    await db().collection('activityLogs').add({
-      actionType: 'login',
-      userName: normalized.fullName,
-      userRole: normalized.roleLabel,
-      authUid: firebase.auth().currentUser?.uid || null,
-      timestamp: firebase.firestore.FieldValue.serverTimestamp()
-    }).catch(console.warn);
-
-    return firebase.auth().currentUser;
-  }
-
-  async function listUsersFixed() {
-    await ensureDefaultAdminFixed();
-    const snap = await db().collection('users').orderBy('createdAt', 'asc').get();
-    return snap.docs.map(window.AuthUsers.normalizeUser);
-  }
-
-  function patchLoginFix() {
-    if (!window.FirebaseService || !window.AuthUsers || window.FirebaseService.__usersLoginFixPatched) return;
-    window.FirebaseService.signIn = signInFixed;
-    window.FirebaseService.listUsers = listUsersFixed;
-    window.FirebaseService.ensureDefaultAdmin = ensureDefaultAdminFixed;
-    window.AuthUsers.ensureDefaultAdmin = ensureDefaultAdminFixed;
-    window.AuthUsers.listUsers = listUsersFixed;
-    window.FirebaseService.__usersLoginFixPatched = true;
-  }
-
-  patchLoginFix();
-  window.addEventListener('DOMContentLoaded', patchLoginFix);
-})();
-
-
-/* ==========================================
-   FILE: users-session-restore.js
-   ========================================== */
-(() => {
-  const USER_KEY = 'waterAppCurrentUser';
-
-  function defaultAdminPayload() {
-    const username = window.WATER_APP_SETTINGS?.defaultUserName || 'صالح الدحنون';
-    return {
-      id: 'local-default-admin',
-      fullName: username,
-      username,
-      role: 'superAdmin',
-      roleLabel: 'مدير النظام',
-      active: true,
-      permissions: window.AuthUsers?.ROLE_DEFINITIONS?.superAdmin?.permissions || {
-        viewReports: true,
-        createReports: true,
-        editReports: true,
-        deleteReports: true,
-        exportPdf: true,
-        exportExcel: true,
-        shareWhatsapp: true,
-        manageUsers: true,
-        manageSettings: true
-      }
-    };
-  }
-
-  function getOriginalCurrentUser() {
-    return window.AuthUsers?.__sessionRestoreOriginalCurrentUser || window.AuthUsers?.currentUser;
-  }
-
-  function restoreSessionUser() {
-    if (!window.AuthUsers) return null;
-
-    const originalCurrentUser = getOriginalCurrentUser();
-    const current = typeof originalCurrentUser === 'function'
-      ? originalCurrentUser.call(window.AuthUsers)
-      : null;
-
-    if (current?.permissions) return current;
-
-    const authUser = window.firebase?.auth?.().currentUser;
-    if (authUser) {
-      return window.AuthUsers.setCurrentUser(defaultAdminPayload());
-    }
-
-    return null;
-  }
-
-  function patchPermissions() {
-    if (!window.AuthUsers || window.AuthUsers.__sessionRestorePatched) return;
-
-    const originalCurrentUser = window.AuthUsers.currentUser;
-    const originalHasPermission = window.AuthUsers.hasPermission;
-
-    window.AuthUsers.__sessionRestoreOriginalCurrentUser = originalCurrentUser;
-    window.AuthUsers.__sessionRestoreOriginalHasPermission = originalHasPermission;
-
-    window.AuthUsers.currentUser = function patchedCurrentUser() {
-      const current = typeof originalCurrentUser === 'function'
-        ? originalCurrentUser.call(window.AuthUsers)
-        : null;
-      return current?.permissions ? current : restoreSessionUser();
-    };
-
-    window.AuthUsers.hasPermission = function patchedHasPermission(permission) {
-      const user = window.AuthUsers.currentUser();
-      if (user?.role === 'superAdmin') return true;
-      return typeof originalHasPermission === 'function'
-        ? originalHasPermission.call(window.AuthUsers, permission) === true
-        : false;
-    };
-
-    window.AuthUsers.__sessionRestorePatched = true;
-  }
-
-  function boot() {
-    patchPermissions();
-    restoreSessionUser();
-  }
-
-  boot();
-  window.addEventListener('DOMContentLoaded', boot);
-  window.addEventListener('load', boot);
-  setTimeout(boot, 600);
-})();
-
-
-/* ==========================================
-   FILE: users-ui.js
-   ========================================== */
-(() => {
+window.UsersUI = (() => {
   function esc(v) {
     return String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[c]));
   }
@@ -585,7 +382,10 @@
     host.innerHTML = `<div class="users-loading">جاري تحميل المستخدمين...</div>`;
     const users = await window.AuthUsers.listUsers();
     window.__WATER_USERS_CACHE__ = users;
-    host.innerHTML = `<div class="users-layout"><section class="users-editor"><div class="users-section-title"><h3>إضافة / تعديل مستخدم</h3><p>أنشئ مستخدمًا وحدد دوره وصلاحياته.</p></div>${userForm()}</section><section class="users-list"><div class="users-section-title"><h3>المستخدمون الحاليون</h3><p>${users.length} مستخدم مسجل</p></div><div class="users-cards">${users.map(userCard).join('')}</div></section></div>`;
+    host.innerHTML = `<div class="users-layout">
+      <section class="users-editor"><div class="users-section-title"><h3>إضافة / تعديل مستخدم</h3><p>أنشئ مستخدمًا وحدد دوره وصلاحياته.</p></div>${userForm()}</section>
+      <section class="users-list"><div class="users-section-title"><h3>المستخدمون الحاليون</h3><p>${users.length} مستخدم مسجل</p></div><div class="users-cards">${users.map(userCard).join('')}</div></section>
+    </div>`;
   }
 
   function open() {
@@ -687,38 +487,11 @@
     }
   }
 
-  function patchUI() {
-    if (!window.AppUI || window.AppUI.__usersUiPatched) return;
-    const originalLayout = window.AppUI.layout;
-    window.AppUI.layout = function usersLayout(state, settings) {
-      let html = originalLayout(state, settings);
-      const user = window.AuthUsers?.currentUser?.();
-      const canManageUsers = window.AuthUsers?.hasPermission?.('manageUsers');
-      const userBadge = user ? `<div class="current-user-badge"><span>${esc(user.fullName)}</span><b>${esc(user.roleLabel || user.role)}</b></div>` : '';
-      html = html.replace('</header>', `${userBadge}</header>`);
-      html = html.replace('</main>', `${usersModal()} </main>`);
-      return html;
-    };
-
-    const originalLogin = window.AppUI.login;
-    window.AppUI.login = function usersLogin(configured) {
-      return originalLogin(configured).replace('أدخل بيانات الدخول المعتمدة للمتابعة.', 'أدخل بيانات المستخدم المحددة من صفحة الصلاحيات.');
-    };
-    window.AppUI.__usersUiPatched = true;
-  }
-
-  function usersModal() {
-    return `<div id="usersModal" class="modal"><div class="modal-backdrop" onclick="UsersUI.close()"></div><div class="modal-panel users-panel"><button class="close" onclick="UsersUI.close()">×</button><div class="modal-title"><span>👥</span><div><h2>إدارة المستخدمين والصلاحيات</h2><p>إضافة مستخدمين، تحديد أدوارهم، وتفعيل أو تعطيل الصلاحيات.</p></div></div><div id="usersContent"></div></div></div>`;
-  }
-
-  window.UsersUI = { open, close, save, edit, resetForm, toggleActive, remove, applyRolePermissions, renderUsersPage };
-  patchUI();
-  window.addEventListener('DOMContentLoaded', patchUI);
+  return { open, close, save, edit, resetForm, toggleActive, remove, applyRolePermissions, renderUsersPage };
 })();
 
-
 /* ==========================================
-   FILE: permissions-guard.js
+   Action Permission Guards
    ========================================== */
 (() => {
   const ACTION_PERMISSIONS = {
@@ -747,35 +520,11 @@
     window.App.__permissionGuardsPatched = true;
   }
 
-  function patchLayoutButtons() {
-    if (!window.AppUI || window.AppUI.__permissionLayoutPatched) return;
-    const originalLayout = window.AppUI.layout;
-    window.AppUI.layout = function permissionLayout(state, settings) {
-      let html = originalLayout(state, settings);
-      const can = key => window.AuthUsers?.hasPermission?.(key);
-      if (!can('createReports')) {
-        html = html.replace(/<button[^>]+onclick="App\.openNew\(\)"[\s\S]*?<\/button>/g, '');
-        html = html.replace(/<button[^>]+onclick="App\.duplicateLastReport\(\)"[\s\S]*?<\/button>/g, '');
-      }
-      if (!can('manageSettings')) html = html.replace(/<button[^>]+onclick="App\.openSettings\(\)"[\s\S]*?<\/button>/g, '');
-      if (!can('exportExcel')) html = html.replace(/<button[^>]+onclick="App\.exportAllExcel\(\)"[\s\S]*?<\/button>/g, '');
-      if (!can('editReports')) html = html.replace(/<button[^>]+onclick="App\.openEdit\('[^']+'\)"[\s\S]*?<\/button>/g, '');
-      if (!can('deleteReports')) html = html.replace(/<button[^>]+onclick="App\.deleteReport\('[^']+'\)"[\s\S]*?<\/button>/g, '');
-      if (!can('exportPdf')) html = html.replace(/<button[^>]+onclick="App\.exportPdf\('[^']+'\)"[\s\S]*?<\/button>/g, '');
-      if (!can('exportExcel')) html = html.replace(/<button[^>]+onclick="App\.exportOneExcel\('[^']+'\)"[\s\S]*?<\/button>/g, '');
-      if (!can('shareWhatsapp')) html = html.replace(/<button[^>]+onclick="App\.copyWhatsApp\('[^']+'\)"[\s\S]*?<\/button>/g, '');
-      return html;
-    };
-    window.AppUI.__permissionLayoutPatched = true;
-  }
-
-  function patchAll() {
+  function boot() {
     patchAppGuards();
-    patchLayoutButtons();
   }
 
-  patchAll();
-  window.addEventListener('DOMContentLoaded', patchAll);
+  window.addEventListener('DOMContentLoaded', boot);
+  window.addEventListener('load', boot);
+  setTimeout(boot, 500);
 })();
-
-

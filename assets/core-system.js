@@ -4,7 +4,7 @@
    FILE: version-guard.js
    ========================================== */
 (() => {
-  const BUILD_ID = window.WATER_APP_BUILD || '20260518-production-sync-1';
+  const BUILD_ID = window.WATER_APP_BUILD || '20260823-prod-stable-v1';
   const BUILD_KEY = 'waterAppBuildId';
   const SAFE_CACHE_KEYS = [/cache/i, /snapshot/i, /lastHtml/i, /stale/i, /oldUi/i];
 
