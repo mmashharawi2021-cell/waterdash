@@ -102,7 +102,8 @@
   }
 
   function patchAll() {
-    patchReportUtils();
+    // patchReportUtils: REMOVED — recalc() in reports-system.js already applies
+    // skippedWarnings filtering natively (r.warnings = uniqueWarnings.filter(w => !skippedWarnings.includes(w)))
     patchLayout();
   }
 
