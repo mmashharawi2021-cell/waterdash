@@ -391,7 +391,6 @@ window.App = (() => {
       }
       window.ThemeManager?.loadUserTheme(user);
       await loadRemoteSettings(user);
-      window.FirebaseService.seedSettings().catch(console.warn);
       if (state.unsubscribe) state.unsubscribe();
       state.unsubscribe = window.FirebaseService.listenReports(reports => {
         state.reports = reports;

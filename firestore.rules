@@ -1,74 +1,94 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-
-    // ==========================================
-    // SECURITY HELPER FUNCTIONS
-    // ==========================================
-
-    // Helper: Safely retrieves user's role.
-    // BUG FIX: Added exists() guard. Accessing '.data.role' directly on a non-existent document
-    // throws a runtime rules evaluation crash, causing unexpected rejections.
-    function getRole() {
-      let path = /databases/$(database)/documents/users/$(request.auth.uid);
-      return exists(path) ? get(path).data.role : 'operator';
+    // Canonical roles are signed Firebase Auth custom claims. They are minted
+    // only by Firebase Admin SDK/trusted server code, never by this browser.
+    function signedIn() {
+      return request.auth != null;
     }
 
-    // Helper: Checks if the authenticated user is a verified system admin
-    function isAdmin() {
-      return request.auth != null && getRole() == 'admin';
+    function hasRole(role) {
+      return signedIn() && request.auth.token.waterdashRole == role;
     }
 
-    // ==========================================
-    // COLLECTION ACCESS RULES
-    // ==========================================
+    function isSuperAdmin() {
+      return hasRole('superAdmin');
+    }
 
-    // User Profiles RBAC Security
+    function isSupervisor() {
+      return hasRole('supervisor');
+    }
+
+    function isDataEntry() {
+      return hasRole('dataEntry');
+    }
+
+    function isViewer() {
+      return hasRole('viewer');
+    }
+
+    function hasCanonicalRole() {
+      return isSuperAdmin() || isSupervisor() || isDataEntry() || isViewer();
+    }
+
+    function canCreateOperationalData() {
+      return isSuperAdmin() || isSupervisor() || isDataEntry();
+    }
+
+    function canEditOperationalData() {
+      return isSuperAdmin() || isSupervisor();
+    }
+
+    function canDeleteOperationalData() {
+      return isSuperAdmin();
+    }
+
+    function canManageSettings() {
+      return isSuperAdmin() || isSupervisor();
+    }
+
+    // Legacy /users documents may contain browser-readable password hashes and
+    // roles. They are migration-only data and cannot be used for authorization.
+    // Even super-admin custom claims cannot change claims through Firestore.
     match /users/{userId} {
-      allow read: if request.auth != null;
-      // Users can only write their own profile document (e.g. on registration) unless Admin
-      allow write: if request.auth != null && (request.auth.uid == userId || isAdmin());
+      allow read, create, update, delete: if false;
     }
 
-    // Reports Security
     match /reports/{reportId} {
-      allow read: if request.auth != null;
-      allow create: if request.auth != null;
-      // Only Admins can modify/delete past historical water pumping reports
-      allow update, delete: if isAdmin();
+      allow read: if hasCanonicalRole();
+      allow create: if canCreateOperationalData();
+      allow update: if canEditOperationalData();
+      allow delete: if canDeleteOperationalData();
     }
 
-    // Fuel Entries Security
     match /fuelEntries/{docId} {
-      allow read: if request.auth != null;
-      allow create: if request.auth != null;
-      allow update, delete: if isAdmin();
+      allow read: if hasCanonicalRole();
+      allow create: if canCreateOperationalData();
+      allow update: if canEditOperationalData();
+      allow delete: if canDeleteOperationalData();
     }
 
-    // System Constant Settings Security
     match /settings/{docId} {
-      allow read: if request.auth != null;
-      allow write: if isAdmin();
+      allow read: if hasCanonicalRole();
+      allow create, update, delete: if canManageSettings();
     }
 
-    // Water Pump Station Infrastructure Security
     match /stations/{docId} {
-      allow read: if request.auth != null;
-      allow write: if isAdmin();
+      allow read: if hasCanonicalRole();
+      allow create, update, delete: if canManageSettings();
     }
 
-    // Activity Logs System Auditing Security
-    // AUDIT VULNERABILITY PATCH: Changed to read/create only.
-    // Audit logs MUST be append-only! Allowing 'write' (which covers update/delete)
-    // allows a compromised account or malicious operator to alter or delete logs to hide their actions.
+    // Activity logs are append-only. A regular user may append their action,
+    // but cannot alter history; viewing audit history requires super-admin.
     match /activityLogs/{docId} {
-      allow read, create: if request.auth != null;
-      allow update, delete: if false; // Audit timelines are immutable
+      allow read: if isSuperAdmin();
+      allow create: if hasCanonicalRole();
+      allow update, delete: if false;
     }
 
-    // User Preferences Security (Themes, layout views)
+    // Preferences are private to the authenticated Firebase Auth UID.
     match /userPreferences/{docId} {
-      allow read, write: if request.auth != null && (request.auth.uid == docId || isAdmin());
+      allow read, write: if signedIn() && request.auth.uid == docId;
     }
   }
 }
