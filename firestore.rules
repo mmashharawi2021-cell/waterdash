@@ -47,6 +47,46 @@ service cloud.firestore {
       return isSuperAdmin() || isSupervisor();
     }
 
+    function isValidCycleDate(value) {
+      return value is string && value.matches('^\\d{4}-((01|03|05|07|08|10|12)-(0[1-9]|[12]\\d|3[01])|(04|06|09|11)-(0[1-9]|[12]\\d|30)|02-(0[1-9]|1\\d|2[0-8]))$');
+    }
+
+    function validFuelCycleCreate() {
+      return isSuperAdmin()
+        && request.resource.data.keys().hasOnly(['startDate', 'updatedAt', 'updatedBy', 'revision'])
+        && isValidCycleDate(request.resource.data.startDate)
+        && request.resource.data.updatedAt == request.time
+        && request.resource.data.updatedBy == request.auth.uid
+        && request.resource.data.revision == 1;
+    }
+
+    function validFuelCycleUpdate() {
+      return isSuperAdmin()
+        && request.resource.data.keys().hasOnly(['startDate', 'updatedAt', 'updatedBy', 'revision'])
+        && isValidCycleDate(request.resource.data.startDate)
+        && request.resource.data.updatedAt == request.time
+        && request.resource.data.updatedBy == request.auth.uid
+        && request.resource.data.revision is int
+        && request.resource.data.revision == resource.data.revision + 1;
+    }
+
+    function isFuelCycleAudit() {
+      return request.resource.data.actionType == 'FUEL_CYCLE_RESET'
+        || request.resource.data.actionType == 'FUEL_CYCLE_RESTORE';
+    }
+
+    function validFuelCycleAudit() {
+      return isSuperAdmin()
+        && request.resource.data.keys().hasOnly(['actionType', 'previousCycleStart', 'newCycleStart', 'changedBy', 'changedAt', 'cycleRevision'])
+        && isValidCycleDate(request.resource.data.previousCycleStart)
+        && isValidCycleDate(request.resource.data.newCycleStart)
+        && request.resource.data.changedBy == request.auth.uid
+        && request.resource.data.changedAt == request.time
+        && request.resource.data.cycleRevision is int
+        && getAfter(/databases/$(database)/documents/settings/fuelCycle).data.startDate == request.resource.data.newCycleStart
+        && getAfter(/databases/$(database)/documents/settings/fuelCycle).data.revision == request.resource.data.cycleRevision;
+    }
+
     // Legacy /users documents may contain browser-readable password hashes and
     // roles. They are migration-only data and cannot be used for authorization.
     // Even super-admin custom claims cannot change claims through Firestore.
@@ -70,7 +110,11 @@ service cloud.firestore {
 
     match /settings/{docId} {
       allow read: if hasCanonicalRole();
-      allow create, update, delete: if canManageSettings();
+      allow create: if (docId == 'fuelCycle' && validFuelCycleCreate())
+        || (docId != 'fuelCycle' && canManageSettings());
+      allow update: if (docId == 'fuelCycle' && validFuelCycleUpdate())
+        || (docId != 'fuelCycle' && canManageSettings());
+      allow delete: if docId != 'fuelCycle' && canManageSettings();
     }
 
     match /stations/{docId} {
@@ -82,7 +126,7 @@ service cloud.firestore {
     // but cannot alter history; viewing audit history requires super-admin.
     match /activityLogs/{docId} {
       allow read: if isSuperAdmin();
-      allow create: if hasCanonicalRole();
+      allow create: if isFuelCycleAudit() ? validFuelCycleAudit() : hasCanonicalRole();
       allow update, delete: if false;
     }
 

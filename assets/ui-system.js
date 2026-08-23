@@ -593,19 +593,39 @@ window.AppUI = (() => {
     const reports = Array.isArray(window.App?.state?.reports) ? window.App.state.reports : [];
     const num = v => { const x = Number(String(v ?? '').replace(',', '.').replace(/[^0-9.\-]/g, '')); return Number.isFinite(x) ? x : 0; };
     const f = v => { const x = num(v); return Number.isInteger(x) ? String(x) : x.toFixed(2); };
+    const cycle = window.WaterFuel?.getCycleState?.() || { startDate: '2026-08-22', revision: 0, ledger: null, modal: null };
+    const ledger = cycle.ledger || window.WaterFuel?.getCycleLedger?.({ fuelEntries: entries, reports, cycleStart: cycle.startDate });
 
-    // ✅ الوارد: من إدخالات السولار (fuelEntries) — النوع الوارد فقط
-    const incomingEntries = entries.filter(e => e.type !== 'consumed');
-    const incoming = incomingEntries.reduce((s, e) => s + num(e.quantityLiters), 0);
-
-    // ✅ المستهلك: من تقارير التشغيل اليومية (fuel.consumedDaily)
-    const reportRows = [...reports]
+    // Every current-cycle value is taken from the authoritative ledger.
+    const incomingEntries = ledger?.entriesUsed || [];
+    const incoming = ledger?.incomingFuel || 0;
+    const reportRows = [...(ledger?.reportsUsed || [])]
       .filter(r => num(r.fuel?.consumedDaily) > 0)
       .sort((a, b) => String(b.reportDate).localeCompare(String(a.reportDate)));
-    const consumed = reportRows.reduce((s, r) => s + num(r.fuel?.consumedDaily), 0);
-
-    const balance = incoming - consumed;
+    const consumed = ledger?.reportConsumption || 0;
+    const balance = ledger?.currentBalance || 0;
     const balColor = balance < 0 ? '#ef4444' : balance < 200 ? '#f59e0b' : '#10b981';
+    const isSuperAdmin = window.AuthUsers?.currentUser?.()?.role === 'superAdmin';
+    const modal = cycle.modal;
+    const preview = modal?.preview;
+    const cycleAdminControls = isSuperAdmin ? `
+      <section class="fuel-cycle-admin" style="margin:0 0 24px;padding:18px;border:1px solid rgba(245,158,11,.36);border-radius:20px;background:rgba(245,158,11,.06);">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+          <div><h3 style="margin:0 0 5px;font-size:16px;">إدارة دورة الوقود</h3><p style="margin:0;color:var(--text-muted);font-size:13px;">بداية الدورة الحالية: <strong>${esc(cycle.startDate)}</strong> — تغيير الحد لا يحذف أو يعدّل السجل التاريخي.</p></div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;"><button type="button" class="btn" onclick="WaterFuel.openCycleReset()">تصفير الوقود</button><button type="button" class="btn" onclick="WaterFuel.openCycleRestore()">استعادة الاحتساب من تاريخ</button></div>
+        </div>
+      </section>` : '';
+    const cycleModal = modal ? `
+      <div id="fuelCycleModal" class="modal" style="display:flex;z-index:3200;" dir="rtl">
+        <div class="modal-backdrop" onclick="WaterFuel.cancelCycleChange()"></div>
+        <div class="modal-panel" style="width:min(640px,calc(100vw - 24px));max-height:88vh;overflow:auto;">
+          <button class="close" type="button" onclick="WaterFuel.cancelCycleChange()">×</button>
+          <div class="modal-title"><span>⛽</span><div><h2>${modal.action === 'FUEL_CYCLE_RESET' ? 'تأكيد تصفير دورة الوقود' : 'استعادة الاحتساب من تاريخ'}</h2><p>هذه العملية تغيّر حد الدورة فقط؛ السجلات والتقارير التاريخية تبقى كما هي.</p></div></div>
+          ${modal.action === 'FUEL_CYCLE_RESTORE' ? `<label style="display:block;font-weight:800;margin:14px 0;">تاريخ بداية الدورة<input id="fuelCycleRestoreDate" type="date" value="${esc(modal.selectedStart)}" onchange="WaterFuel.previewCycleDate(this.value)"></label><p class="notice warn" style="margin:0 0 14px;">سيُعاد احتساب مؤشرات الوقود الحالية من التاريخ المحدد. لا يتم حذف أو تعديل أي حركة أو تقرير تاريخي.</p>` : `<div class="notice warn" style="margin:14px 0;"><p>بداية الدورة الحالية: <strong>${esc(modal.previousCycleStart)}</strong></p><p>بداية الدورة المقترحة وفق تاريخ فلسطين المحلي: <strong>${esc(modal.selectedStart)}</strong></p></div>`}
+          ${preview ? `<section style="display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:10px;margin:14px 0;"><article class="kpi-card"><span>الوارد</span><strong>${f(preview.incomingFuel)} لتر</strong></article><article class="kpi-card"><span>المستهلك</span><strong>${f(preview.reportConsumption)} لتر</strong></article><article class="kpi-card"><span>الرصيد المحسوب</span><strong>${f(preview.currentBalance)} لتر</strong></article><article class="kpi-card"><span>السجلات المشمولة</span><strong>${preview.entriesUsed.length} توريد / ${preview.reportsUsed.length} تقرير</strong></article></section>` : '<p class="notice warn">اختر تاريخًا صالحًا لمعاينة الاحتساب.</p>'}
+          <div class="actions modal-actions" style="margin-top:18px;"><button type="button" class="btn primary" ${preview ? '' : 'disabled'} onclick="WaterFuel.confirmCycleChange()">تأكيد التغيير</button><button type="button" class="btn" onclick="WaterFuel.cancelCycleChange()">إلغاء</button></div>
+        </div>
+      </div>` : '';
 
     // --- صفوف جدول الوارد (قابل للتعديل/الحذف) ---
     const sortedIncoming = [...incomingEntries].sort((a, b) =>
@@ -648,6 +668,7 @@ window.AppUI = (() => {
           </div>
           <button type="button" onclick="WaterFuel.openFuelModal()" style="display:inline-flex;align-items:center;gap:8px;padding:12px 22px;border-radius:16px;background:linear-gradient(135deg,rgba(16,185,129,.9),rgba(5,150,105,.85));color:#fff;font-weight:800;font-size:14px;border:none;cursor:pointer;box-shadow:0 8px 24px rgba(16,185,129,.3);">➕ إضافة سولار وارد</button>
         </div>
+        ${cycleAdminControls}
 
         <!-- Summary Cards -->
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px;margin-bottom:32px;">
@@ -726,7 +747,7 @@ window.AppUI = (() => {
             </div>`}
           </div>
         </div>
-      </div>
+      </div>${cycleModal}
     `;
   }
 
@@ -759,6 +780,14 @@ window.AppUI = (() => {
     }
     
     const s = summary(dashboardReports);
+    // Fuel KPIs and alerts always use the same active-cycle ledger as the
+    // Fuel management page, independent of dashboard display filters.
+    const activeFuelLedger = window.WaterFuel?.getCurrentCycleLedger?.();
+    if (activeFuelLedger) {
+      s.fuelSupplied = activeFuelLedger.incomingFuel;
+      s.fuelConsumed = activeFuelLedger.reportConsumption;
+      s.stock = activeFuelLedger.currentBalance;
+    }
     
     // Live operational status detection
     const latestReport = reports[0];
@@ -779,6 +808,11 @@ window.AppUI = (() => {
     const fuelPct = Math.max(0, Math.min(rawFuelPct, 100));
     const isCritical = s.stock < 200;
     const isNegativeStock = s.stock < 0;
+    const fuelAlert = isNegativeStock
+      ? `تنبيه: رصيد الديزل الحالي سالب (${fmt(s.stock)} لتر).`
+      : isCritical
+        ? `تنبيه: رصيد الديزل الحالي منخفض (${fmt(s.stock)} لتر).`
+        : `رصيد الديزل الحالي ضمن الحد الآمن (${fmt(s.stock)} لتر).`;
 
     return `<div class="dashboard-layout">
       ${sidebarMenu(reports.length, active)}
@@ -817,9 +851,9 @@ window.AppUI = (() => {
                     <span>💡 الشرح والتحليل</span>
                   </button>
                 </div>
-                <div style="display: flex; align-items: center; gap: 12px; background: rgba(239, 68, 68, 0.06); padding: 10px 16px; border-radius: 12px; border: 1px solid rgba(239, 68, 68, 0.12); color: #ef4444; font-size: 13px; font-weight: 700;">
+                <div id="fuelCycleAlert" data-fuel-cycle-balance="${s.stock}" style="display: flex; align-items: center; gap: 12px; background: rgba(239, 68, 68, 0.06); padding: 10px 16px; border-radius: 12px; border: 1px solid rgba(239, 68, 68, 0.12); color: #ef4444; font-size: 13px; font-weight: 700;">
                   <span style="font-size: 16px; flex-shrink: 0;">⛽</span> 
-                  <span style="line-height: 1.5;">تنبيه: رصيد الديزل الحالي يكفي لأربعة أيام تشغيل فقط.</span>
+                  <span style="line-height: 1.5;">${fuelAlert}</span>
                 </div>
               </div>
             </div>
@@ -854,7 +888,7 @@ window.AppUI = (() => {
               ${kpi('🚛','الوقود المزود',fmt(s.fuelSupplied),'لتر', 'warning')}
               
               <!-- 3D Cylinder Fuel Tank Gauge -->
-              <div class="kpi-card fuel-tank-card" style="padding: 12px 24px; display: flex; flex-direction: row; align-items: center; gap: 20px; grid-column: span 1;">
+              <div class="kpi-card fuel-tank-card" data-fuel-cycle-balance="${s.stock}" style="padding: 12px 24px; display: flex; flex-direction: row; align-items: center; gap: 20px; grid-column: span 1;">
                 <div class="tank-container" style="position: relative; width: 44px; height: 70px; flex-shrink: 0;">
                   <svg width="44" height="70" viewBox="0 0 60 95" style="overflow: visible;">
                     <!-- Cylinder body glass reflection -->
@@ -878,7 +912,7 @@ window.AppUI = (() => {
                 </div>
                 <div class="kpi-details">
                   <span>مؤشر رصيد السولار</span>
-                  <strong>${s.stock ? fmt(s.stock) : '_'} لتر</strong>
+                  <strong>${Number.isFinite(s.stock) ? fmt(s.stock) : '_'} لتر</strong>
                   <small style="color: ${isNegativeStock ? '#ef4444' : isCritical ? '#ef4444' : 'var(--text-muted)'}; font-weight: ${isCritical || isNegativeStock ? 'bold' : 'normal'}; animation: ${isCritical || isNegativeStock ? 'blink-text 1.2s infinite' : 'none'};">${isCritical ? '⚠️ رصيد منخفض! اطلب سولار' : `رصيد السولار الاحتياطي`}</small>
                 </div>
               </div>

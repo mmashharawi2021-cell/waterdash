@@ -5,9 +5,11 @@
    ========================================== */
 (function () {
   const COLLECTION = 'fuelEntries';
+  const CYCLE_SETTINGS_COLLECTION = 'settings';
+  const CYCLE_SETTINGS_DOC = 'fuelCycle';
   // Local operational dates are stored as calendar strings. Do not convert these
   // values through Date/UTC: the fuel-cycle boundary is Palestine-local.
-  const FUEL_CYCLE_START = '2026-08-22';
+  const DEFAULT_FUEL_CYCLE_START = '2026-08-22';
   const state = {
     entries: [],
     rawEntries: [],
@@ -15,7 +17,14 @@
     unsubscribe: null,
     observerStarted: false,
     editingId: null,
-    saving: false
+    saving: false,
+    cycleUnsubscribe: null,
+    cycle: {
+      startDate: DEFAULT_FUEL_CYCLE_START,
+      revision: 0,
+      loaded: false,
+      modal: null
+    }
   };
 
   function esc(value) {
@@ -36,8 +45,15 @@
     return Number.isInteger(r) ? String(r) : String(r);
   }
 
+  function palestineDate(value = new Date()) {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Gaza', year: 'numeric', month: '2-digit', day: '2-digit'
+    }).formatToParts(value).reduce((result, part) => ({ ...result, [part.type]: part.value }), {});
+    return `${parts.year}-${parts.month}-${parts.day}`;
+  }
+
   function today() {
-    return new Date().toISOString().slice(0, 10);
+    return palestineDate();
   }
 
   function timeNow() {
@@ -143,16 +159,23 @@
       .replace(/[۰-۹]/g, digit => '۰۱۲۳۴۵۶۷۸۹'.indexOf(digit))
       .replace(/[.]/g, '/')
       .replace(/[\u066B]/g, '.');
+    const calendarDate = (year, month, day) => {
+      const candidate = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)));
+      // Date.UTC is used only to validate calendar components; stored dates
+      // remain untouched Palestine-local YYYY-MM-DD strings.
+      if (candidate.getUTCFullYear() !== Number(year) || candidate.getUTCMonth() !== Number(month) - 1 || candidate.getUTCDate() !== Number(day)) return '';
+      return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    };
     const iso = text.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
-    if (iso) return `${iso[1]}-${iso[2].padStart(2, '0')}-${iso[3].padStart(2, '0')}`;
+    if (iso) return calendarDate(iso[1], iso[2], iso[3]);
     const local = text.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
-    if (local) return `${local[3]}-${local[2].padStart(2, '0')}-${local[1].padStart(2, '0')}`;
+    if (local) return calendarDate(local[3], local[2], local[1]);
     return '';
   }
 
   // Pure, cycle-scoped inventory ledger. It does not read/write the DOM,
   // Firestore, timers, or mutable module state.
-  function getCycleLedger({ fuelEntries = [], reports = [], cycleStart = FUEL_CYCLE_START } = {}) {
+  function getCycleLedger({ fuelEntries = [], reports = [], cycleStart = DEFAULT_FUEL_CYCLE_START } = {}) {
     const start = normalizeLocalDate(cycleStart);
     if (!start) throw new Error('Fuel cycle start must be a local calendar date.');
 
@@ -186,6 +209,32 @@
     };
   }
 
+  function activeCycleStart() {
+    return normalizeLocalDate(state.cycle.startDate) || DEFAULT_FUEL_CYCLE_START;
+  }
+
+  function currentCycleLedger() {
+    return getCycleLedger({
+      fuelEntries: state.rawEntries,
+      reports: window.App?.state?.reports || [],
+      cycleStart: activeCycleStart()
+    });
+  }
+
+  function cycleState() {
+    const ledger = currentCycleLedger();
+    return {
+      startDate: activeCycleStart(),
+      revision: state.cycle.revision,
+      loaded: state.cycle.loaded,
+      modal: state.cycle.modal ? {
+        ...state.cycle.modal,
+        preview: state.cycle.modal.preview ? { ...state.cycle.modal.preview } : null
+      } : null,
+      ledger
+    };
+  }
+
   function setEntries(list) {
     state.rawEntries = sortEntries(list || []);
     const split = splitUnique(state.rawEntries);
@@ -194,6 +243,146 @@
     window.WaterFuelRawEntries = state.rawEntries;
     if (window.App?.render) {
       window.App.render();
+    }
+  }
+
+  function setCycleConfig(data) {
+    const startDate = normalizeLocalDate(data?.startDate) || DEFAULT_FUEL_CYCLE_START;
+    const revision = Number.isInteger(data?.revision) && data.revision >= 0 ? data.revision : 0;
+    const changed = state.cycle.startDate !== startDate || state.cycle.revision !== revision || !state.cycle.loaded;
+    state.cycle.startDate = startDate;
+    state.cycle.revision = revision;
+    state.cycle.loaded = true;
+    if (changed && window.App?.render) window.App.render();
+    renderStableFuelSection();
+  }
+
+  function startCycleListener() {
+    if (state.cycleUnsubscribe || !configured()) return;
+    state.cycleUnsubscribe = db().collection(CYCLE_SETTINGS_COLLECTION).doc(CYCLE_SETTINGS_DOC).onSnapshot(snapshot => {
+      setCycleConfig(snapshot.exists ? snapshot.data() : null);
+    }, error => {
+      console.warn('fuel cycle listener error', error);
+      state.cycleUnsubscribe = null;
+      setCycleConfig(null);
+    });
+  }
+
+  function isSuperAdmin() {
+    return window.AuthUsers?.currentUser?.()?.role === 'superAdmin';
+  }
+
+  function requireCycleAdmin() {
+    if (isSuperAdmin()) return true;
+    toast('تغيير دورة الوقود متاح لمدير النظام فقط.', 'warn');
+    return false;
+  }
+
+  function cyclePreview(startDate) {
+    const selected = normalizeLocalDate(startDate);
+    if (!selected) return null;
+    return getCycleLedger({
+      fuelEntries: state.rawEntries,
+      reports: window.App?.state?.reports || [],
+      cycleStart: selected
+    });
+  }
+
+  function showCycleModal(action, selectedStart) {
+    if (!requireCycleAdmin()) return;
+    const startDate = normalizeLocalDate(selectedStart);
+    if (!startDate) {
+      toast('اختر تاريخ بداية صالحًا بصيغة YYYY-MM-DD.', 'warn');
+      return;
+    }
+    state.cycle.modal = {
+      action,
+      selectedStart: startDate,
+      expectedRevision: state.cycle.revision,
+      previousCycleStart: activeCycleStart(),
+      preview: cyclePreview(startDate)
+    };
+    window.App?.render?.();
+  }
+
+  function openCycleReset() {
+    showCycleModal('FUEL_CYCLE_RESET', palestineDate());
+  }
+
+  function openCycleRestore() {
+    showCycleModal('FUEL_CYCLE_RESTORE', activeCycleStart());
+  }
+
+  function previewCycleDate(value) {
+    if (!state.cycle.modal || state.cycle.modal.action !== 'FUEL_CYCLE_RESTORE') return;
+    const selectedStart = normalizeLocalDate(value);
+    if (!selectedStart) {
+      state.cycle.modal.preview = null;
+      state.cycle.modal.selectedStart = String(value || '');
+    } else {
+      state.cycle.modal.selectedStart = selectedStart;
+      state.cycle.modal.preview = cyclePreview(selectedStart);
+    }
+    window.App?.render?.();
+  }
+
+  function cancelCycleChange() {
+    state.cycle.modal = null;
+    window.App?.render?.();
+  }
+
+  async function confirmCycleChange() {
+    const modal = state.cycle.modal;
+    if (!modal || !requireCycleAdmin()) return;
+    const newCycleStart = normalizeLocalDate(modal.selectedStart);
+    if (!newCycleStart) {
+      toast('التاريخ المختار غير صالح.', 'warn');
+      return;
+    }
+    if (!configured()) {
+      toast('Firebase غير متاح أو غير مهيأ.', 'warn');
+      return;
+    }
+    const authUser = firebase.auth().currentUser;
+    if (!authUser?.uid) {
+      toast('انتهت الجلسة. سجّل الدخول من جديد.', 'warn');
+      return;
+    }
+    const cycleRef = db().collection(CYCLE_SETTINGS_COLLECTION).doc(CYCLE_SETTINGS_DOC);
+    const auditRef = db().collection('activityLogs').doc();
+    try {
+      await db().runTransaction(async transaction => {
+        const snapshot = await transaction.get(cycleRef);
+        const current = snapshot.exists ? snapshot.data() : {};
+        const previousCycleStart = normalizeLocalDate(current.startDate) || DEFAULT_FUEL_CYCLE_START;
+        const currentRevision = Number.isInteger(current.revision) ? current.revision : 0;
+        if (currentRevision !== modal.expectedRevision) {
+          throw new Error('تم تغيير دورة الوقود من جلسة أخرى. أعد فتح العملية لمراجعة الأرقام الحالية.');
+        }
+        if (previousCycleStart === newCycleStart) {
+          throw new Error('التاريخ المختار هو بداية الدورة الحالية بالفعل.');
+        }
+        const nextRevision = currentRevision + 1;
+        transaction.set(cycleRef, {
+          startDate: newCycleStart,
+          updatedAt: serverTime(),
+          updatedBy: authUser.uid,
+          revision: nextRevision
+        });
+        transaction.set(auditRef, {
+          actionType: modal.action,
+          previousCycleStart,
+          newCycleStart,
+          changedBy: authUser.uid,
+          changedAt: serverTime(),
+          cycleRevision: nextRevision
+        });
+      });
+      state.cycle.modal = null;
+      toast('تم تحديث بداية دورة الوقود. جميع الأرصدة الحالية أعيد احتسابها من السجل المعتمد.', 'ok');
+    } catch (error) {
+      toast(error?.message || 'تعذر تحديث دورة الوقود.', 'warn');
+      console.error(error);
     }
   }
 
@@ -321,11 +510,7 @@
     const { unique, duplicates } = splitUnique(rawEntries);
     const recent = unique.slice(0, 8);
 
-    const ledger = getCycleLedger({
-      fuelEntries: rawEntries,
-      reports: window.App?.state?.reports || [],
-      cycleStart: FUEL_CYCLE_START
-    });
+    const ledger = currentCycleLedger();
 
     section.dataset.sourceFixed = 'true';
     section.innerHTML = `
@@ -562,10 +747,14 @@
       firebase.auth().onAuthStateChanged(user => {
         if (user) {
           startListener();
+          startCycleListener();
           return;
         }
         if (state.unsubscribe) state.unsubscribe();
+        if (state.cycleUnsubscribe) state.cycleUnsubscribe();
         state.unsubscribe = null;
+        state.cycleUnsubscribe = null;
+        state.cycle = { startDate: DEFAULT_FUEL_CYCLE_START, revision: 0, loaded: false, modal: null };
         setEntries([]);
       });
     }
@@ -638,7 +827,16 @@
     renderStableFuelSection,
     getAccounting,
     getCycleLedger,
-    FUEL_CYCLE_START
+    getCurrentCycleLedger: currentCycleLedger,
+    getCycleState: cycleState,
+    getCyclePreview: cyclePreview,
+    openCycleReset,
+    openCycleRestore,
+    previewCycleDate,
+    cancelCycleChange,
+    confirmCycleChange,
+    palestineDate,
+    FUEL_CYCLE_START: DEFAULT_FUEL_CYCLE_START
   };
 
   window.FuelSourceFix = {

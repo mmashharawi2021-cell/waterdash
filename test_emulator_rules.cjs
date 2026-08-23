@@ -1,7 +1,7 @@
 const fs = require('node:fs');
 const assert = require('node:assert/strict');
 const { initializeTestEnvironment, assertFails, assertSucceeds } = require('@firebase/rules-unit-testing');
-const { doc, getDoc, setDoc, updateDoc, deleteDoc } = require('firebase/firestore');
+const { doc, getDoc, setDoc, updateDoc, deleteDoc, serverTimestamp, runTransaction } = require('firebase/firestore');
 
 const PROJECT_ID = 'waterdash-emulator';
 let passed = 0;
@@ -19,6 +19,10 @@ function check(condition, label) {
   passed += 1;
 }
 
+function fuelCyclePayload(uid, startDate, revision) {
+  return { startDate, updatedAt: serverTimestamp(), updatedBy: uid, revision };
+}
+
 async function main() {
   requireLoopback('FIRESTORE_EMULATOR_HOST');
   requireLoopback('FIREBASE_AUTH_EMULATOR_HOST');
@@ -32,6 +36,7 @@ async function main() {
     await setDoc(doc(adminDb, 'reports/seed'), { title: 'seed' });
     await setDoc(doc(adminDb, 'fuelEntries/seed'), { quantityLiters: 10 });
     await setDoc(doc(adminDb, 'settings/main'), { appName: 'WaterDash' });
+    await setDoc(doc(adminDb, 'settings/fuelCycle'), { startDate: '2026-08-22', updatedAt: new Date(), updatedBy: 'bootstrap', revision: 1 });
     await setDoc(doc(adminDb, 'stations/main'), { name: 'Main' });
     await setDoc(doc(adminDb, 'users/legacy'), { username: 'legacy', role: 'admin', passwordHash: 'not-used' });
   });
@@ -43,6 +48,7 @@ async function main() {
   await assertFails(getDoc(doc(db('attacker'), 'reports/seed'))); passed += 1;
   await assertFails(getDoc(doc(db('invalid-claim', 'not-a-canonical-role'), 'reports/seed'))); passed += 1;
   await assertFails(setDoc(doc(db('attacker'), 'settings/main'), { unsafe: true })); passed += 1;
+  await assertFails(updateDoc(doc(db('attacker'), 'settings/fuelCycle'), fuelCyclePayload('attacker', '2026-08-23', 2))); passed += 1;
   await assertFails(setDoc(doc(db('attacker'), 'stations/main'), { unsafe: true })); passed += 1;
 
   // Viewer: read-only operational access; legacy credentials remain hidden.
@@ -51,6 +57,7 @@ async function main() {
   await assertFails(setDoc(doc(db('viewer', 'viewer'), 'reports/viewer-create'), { title: 'no' })); passed += 1;
   await assertFails(deleteDoc(doc(db('viewer', 'viewer'), 'reports/seed'))); passed += 1;
   await assertFails(getDoc(doc(db('viewer', 'viewer'), 'users/legacy'))); passed += 1;
+  await assertFails(updateDoc(doc(db('viewer', 'viewer'), 'settings/fuelCycle'), fuelCyclePayload('viewer', '2026-08-23', 2))); passed += 1;
 
   // Data entry may add operational data but cannot alter existing history.
   await assertSucceeds(setDoc(doc(db('entry', 'dataEntry'), 'reports/entry-create'), { title: 'yes' })); passed += 1;
@@ -58,6 +65,7 @@ async function main() {
   await assertFails(updateDoc(doc(db('entry', 'dataEntry'), 'reports/seed'), { title: 'no' })); passed += 1;
   await assertFails(deleteDoc(doc(db('entry', 'dataEntry'), 'fuelEntries/seed'))); passed += 1;
   await assertFails(updateDoc(doc(db('entry', 'dataEntry'), 'settings/main'), { appName: 'no' })); passed += 1;
+  await assertFails(updateDoc(doc(db('entry', 'dataEntry'), 'settings/fuelCycle'), fuelCyclePayload('entry', '2026-08-23', 2))); passed += 1;
 
   // Supervisor can create/edit operations and settings/stations, but not delete.
   await assertSucceeds(updateDoc(doc(db('supervisor', 'supervisor'), 'reports/seed'), { title: 'supervised' })); passed += 1;
@@ -66,6 +74,7 @@ async function main() {
   await assertSucceeds(updateDoc(doc(db('supervisor', 'supervisor'), 'stations/main'), { name: 'updated' })); passed += 1;
   await assertFails(deleteDoc(doc(db('supervisor', 'supervisor'), 'reports/seed'))); passed += 1;
   await assertFails(setDoc(doc(db('supervisor', 'supervisor'), 'users/supervisor'), { role: 'superAdmin' })); passed += 1;
+  await assertFails(updateDoc(doc(db('supervisor', 'supervisor'), 'settings/fuelCycle'), fuelCyclePayload('supervisor', '2026-08-23', 2))); passed += 1;
 
   // Super-admin can perform intended operational administration, but cannot
   // manage claims/legacy user records through Firestore.
@@ -75,6 +84,34 @@ async function main() {
   await assertSucceeds(setDoc(doc(db('root', 'superAdmin'), 'stations/new'), { name: 'new' })); passed += 1;
   await assertFails(setDoc(doc(db('root', 'superAdmin'), 'users/root'), { role: 'viewer' })); passed += 1;
   await assertFails(getDoc(doc(db('root', 'superAdmin'), 'users/legacy'))); passed += 1;
+  await assertFails(updateDoc(doc(db('root', 'superAdmin'), 'settings/fuelCycle'), fuelCyclePayload('root', '2026-02-30', 2))); passed += 1;
+
+  // A fuel-cycle boundary and its audit record must be changed atomically by
+  // a super-admin. The Rules validate both the revision and getAfter state.
+  const rootDb = db('root', 'superAdmin');
+  await assertSucceeds(runTransaction(rootDb, async transaction => {
+    const cycleRef = doc(rootDb, 'settings/fuelCycle');
+    const auditRef = doc(rootDb, 'activityLogs/fuel-cycle-reset');
+    const current = await transaction.get(cycleRef);
+    assert.equal(current.data().startDate, '2026-08-22');
+    transaction.update(cycleRef, fuelCyclePayload('root', '2026-08-23', 2));
+    transaction.set(auditRef, {
+      actionType: 'FUEL_CYCLE_RESET',
+      previousCycleStart: '2026-08-22',
+      newCycleStart: '2026-08-23',
+      changedBy: 'root',
+      changedAt: serverTimestamp(),
+      cycleRevision: 2
+    });
+  })); passed += 1;
+  await assertFails(setDoc(doc(db('viewer', 'viewer'), 'activityLogs/fake-fuel-cycle'), {
+    actionType: 'FUEL_CYCLE_RESTORE',
+    previousCycleStart: '2026-08-23',
+    newCycleStart: '2026-08-22',
+    changedBy: 'viewer',
+    changedAt: serverTimestamp(),
+    cycleRevision: 3
+  })); passed += 1;
 
   // Private preference and append-only audit invariants remain intact.
   await assertSucceeds(setDoc(doc(db('viewer', 'viewer'), 'userPreferences/viewer'), { themeMode: 'dark' })); passed += 1;
