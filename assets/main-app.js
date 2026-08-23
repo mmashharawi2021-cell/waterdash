@@ -1,5 +1,3 @@
-/* --- Auto-Generated Module: main-app.js --- */
-
 /* ==========================================
    FILE: stable-cleanup.js
    ========================================== */
@@ -12,75 +10,15 @@
     return Number.isFinite(n) ? n : 0;
   }
 
-  function cleanNumber(value, digits = 2) {
-    const n = Number(value);
-    if (!Number.isFinite(n)) return value === 0 ? 0 : '';
-    const rounded = +n.toFixed(digits);
-    return Number.isInteger(rounded) ? rounded : rounded;
-  }
-
   function isExternalWater(name) {
     return EXTERNAL_WATER_RE.test(String(name || ''));
   }
 
-  function cleanBeneficiaries(report) {
-    const next = structuredClone(report || {});
-    next.beneficiaries = Array.isArray(next.beneficiaries) ? next.beneficiaries.map(item => {
-      if (!isExternalWater(item.name)) return item;
-      return { ...item, cars: 0 };
-    }) : [];
-    return next;
-  }
-
-  function cleanReport(report) {
-    const r = cleanBeneficiaries(report || {});
-    r.fuel = r.fuel || {};
-    const prev = number(r.fuel.previousBalance);
-    const added = number(r.fuel.addedDaily);
-    const municipal = number(r.fuel.municipalSupplied);
-    const current = number(r.fuel.currentBalance);
-
-    // لا نعرض ولا نعتمد رصيدًا سالبًا ناتجًا عن تقرير ناقص أو بدون رصيد سابق.
-    if (prev < 0) r.fuel.previousBalance = '';
-    if (current < 0 && !prev && !added && !municipal) {
-      r.fuel.currentBalance = '';
-      r.fuel.loss = '';
-    }
-    return r;
-  }
-
-  function patchReportUtils() {
-    if (!window.ReportUtils || window.ReportUtils.__stableCleanupPatched) return;
-    const originalRecalc = window.ReportUtils.recalc;
-    const originalSummary = window.ReportUtils.summary;
-
-    window.ReportUtils.recalc = function stableRecalc(report) {
-      const r = originalRecalc(cleanReport(report));
-      r.fuel = r.fuel || {};
-      r.water = r.water || {};
-
-      ['addedDaily', 'consumedDaily', 'municipalSupplied', 'previousBalance', 'currentBalance', 'loss'].forEach(key => {
-        if (r.fuel[key] !== '' && r.fuel[key] != null) r.fuel[key] = cleanNumber(number(r.fuel[key]));
-      });
-      ['submersibleRate', 'filteredRate', 'dailyProduction', 'rejectWater', 'lossPercentage', 'filledWater', 'carsCount', 'averagePerCar'].forEach(key => {
-        if (r.water[key] !== '' && r.water[key] != null) r.water[key] = cleanNumber(number(r.water[key]));
-      });
-
-      r.beneficiaries = (r.beneficiaries || []).map(item => isExternalWater(item.name) ? { ...item, cars: 0 } : item);
-      r.warnings = (r.warnings || []).filter(w => !(String(w).includes('بعض الجهات') && r.beneficiaries.every(item => !isExternalWater(item.name) || String(item.cars) === '0' || item.cars === 0)));
-      return r;
-    };
-
-    window.ReportUtils.summary = function stableSummary(reports) {
-      const s = originalSummary((reports || []).map(cleanReport));
-      return Object.fromEntries(Object.entries(s).map(([key, value]) => [key, typeof value === 'number' ? cleanNumber(value) : value]));
-    };
-
-    window.ReportUtils.__stableCleanupPatched = true;
-  }
-
-  // patchLayout: REMOVED — stableLayout in ui-system.js already maps recalc()
-  // over all reports internally (see stable-layout-reset.js L759).
+  // patchReportUtils: REMOVED — unique logic integrated into reports-system.js:
+  // - External water 'بعض الجهات' warning filter → recalc() L303-311
+  // - summary() numeric cleanup → summary() final return
+  // Redundant logic (negative balance, external water cars, cleanNumber rounding)
+  // was already handled natively in reports-system.js recalc().
 
   function fixExternalWaterRows() {
     document.querySelectorAll('#beneficiariesRows tr').forEach(row => {
@@ -133,7 +71,6 @@
   }
 
   function patchAll() {
-    patchReportUtils();
     applyDomCleanup();
   }
 
