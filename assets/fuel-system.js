@@ -5,6 +5,9 @@
    ========================================== */
 (function () {
   const COLLECTION = 'fuelEntries';
+  // Local operational dates are stored as calendar strings. Do not convert these
+  // values through Date/UTC: the fuel-cycle boundary is Palestine-local.
+  const FUEL_CYCLE_START = '2026-08-22';
   const state = {
     entries: [],
     rawEntries: [],
@@ -131,6 +134,56 @@
       }
     });
     return { unique, duplicates };
+  }
+
+  function normalizeLocalDate(value) {
+    const text = String(value ?? '')
+      .trim()
+      .replace(/[٠-٩]/g, digit => '٠١٢٣٤٥٦٧٨٩'.indexOf(digit))
+      .replace(/[۰-۹]/g, digit => '۰۱۲۳۴۵۶۷۸۹'.indexOf(digit))
+      .replace(/[.]/g, '/')
+      .replace(/[\u066B]/g, '.');
+    const iso = text.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+    if (iso) return `${iso[1]}-${iso[2].padStart(2, '0')}-${iso[3].padStart(2, '0')}`;
+    const local = text.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
+    if (local) return `${local[3]}-${local[2].padStart(2, '0')}-${local[1].padStart(2, '0')}`;
+    return '';
+  }
+
+  // Pure, cycle-scoped inventory ledger. It does not read/write the DOM,
+  // Firestore, timers, or mutable module state.
+  function getCycleLedger({ fuelEntries = [], reports = [], cycleStart = FUEL_CYCLE_START } = {}) {
+    const start = normalizeLocalDate(cycleStart);
+    if (!start) throw new Error('Fuel cycle start must be a local calendar date.');
+
+    const { unique } = splitUnique(Array.isArray(fuelEntries) ? fuelEntries : []);
+    const currentEntries = unique.filter(entry => {
+      const date = normalizeLocalDate(entry?.date);
+      return Boolean(date && date >= start);
+    });
+    const incomingEntries = currentEntries.filter(entry => entry?.type !== 'consumed');
+    const historicalManualConsumption = currentEntries.filter(entry => entry?.type === 'consumed');
+    const reportsUsed = (Array.isArray(reports) ? reports : []).filter(report => {
+      const date = normalizeLocalDate(report?.reportDate);
+      return Boolean(date && date >= start);
+    });
+
+    const incomingFuel = incomingEntries.reduce((sum, entry) => sum + num(entry?.quantityLiters), 0);
+    const reportConsumption = reportsUsed.reduce((sum, report) => sum + num(report?.fuel?.consumedDaily), 0);
+    const ignoredManualConsumption = historicalManualConsumption.reduce((sum, entry) => sum + num(entry?.quantityLiters), 0);
+
+    return {
+      cycleStart: start,
+      incomingFuel: +incomingFuel.toFixed(2),
+      reportConsumption: +reportConsumption.toFixed(2),
+      manualConsumption: 0,
+      ignoredManualConsumption: +ignoredManualConsumption.toFixed(2),
+      manualConsumptionPolicy: 'historical-manual-consumption-excluded',
+      totalConsumption: +reportConsumption.toFixed(2),
+      currentBalance: +(incomingFuel - reportConsumption).toFixed(2),
+      entriesUsed: incomingEntries.map(entry => ({ ...entry })),
+      reportsUsed: reportsUsed.map(report => ({ ...report }))
+    };
   }
 
   function setEntries(list) {
@@ -267,9 +320,11 @@
     const { unique, duplicates } = splitUnique(rawEntries);
     const recent = unique.slice(0, 8);
 
-    const incoming = unique.filter(x => x.type !== 'consumed').reduce((sum, item) => sum + num(item.quantityLiters), 0);
-    const consumed = (window.App?.state?.reports || []).reduce((sum, r) => sum + num(r?.fuel?.consumedDaily), 0);
-    const stock = incoming - consumed;
+    const ledger = getCycleLedger({
+      fuelEntries: rawEntries,
+      reports: window.App?.state?.reports || [],
+      cycleStart: FUEL_CYCLE_START
+    });
 
     section.dataset.sourceFixed = 'true';
     section.innerHTML = `
@@ -277,7 +332,7 @@
         <div>
           <p class="eyebrow">إدارة السولار</p>
           <h2>آخر حركات السولار المسجلة</h2>
-          <small>الوارد الكلي: <strong>${fmt(incoming)}</strong> لتر | المستهلك الكلي: <strong>${fmt(consumed)}</strong> لتر | الرصيد المتبقي: <strong>${fmt(stock)}</strong> لتر${duplicates.length ? ` — تم إخفاء ${duplicates.length} مكرر` : ''}</small>
+          <small>دورة الوقود من ${ledger.cycleStart}: الوارد <strong>${fmt(ledger.incomingFuel)}</strong> لتر | المستهلك من التقارير <strong>${fmt(ledger.reportConsumption)}</strong> لتر | الرصيد المتبقي <strong>${fmt(ledger.currentBalance)}</strong> لتر${duplicates.length ? ` — تم إخفاء ${duplicates.length} مكرر` : ''}</small>
         </div>
         <div class="fuel-head-actions">
           <button class="btn primary fuel-fixed-add" type="button" onclick="WaterFuel.openFuelModal()">➕ تسجيل حركة سولار</button>
@@ -330,6 +385,7 @@
 
   function modalHtml(entry) {
     const type = entry.type || 'incoming';
+    const historicalManualConsumption = type === 'consumed';
     return `<div id="fuelEntryModal" class="fuel-modal open" dir="rtl">
       <div class="fuel-modal-backdrop" onclick="WaterFuel.closeFuelModal()"></div>
       <div class="fuel-modal-panel">
@@ -337,9 +393,9 @@
         <div class="modal-title"><span>⛽</span><div><h2>${state.editingId ? 'تعديل حركة السولار' : 'تسجيل حركة سولار'}</h2><p>يتم حفظ هذا السجل في سجلات الوقود المستقلة.</p></div></div>
         <form id="fuelEntryForm" class="fuel-form">
           <label class="wide">نوع العملية
-            <select name="type" required onchange="WaterFuel.toggleFuelFields(this.value)">
+            <select name="type" required onchange="WaterFuel.toggleFuelFields(this.value)" ${historicalManualConsumption ? 'disabled' : ''}>
               <option value="incoming" ${type === 'incoming' ? 'selected' : ''}>وارد (توريد سولار للمحطة)</option>
-              <option value="consumed" ${type === 'consumed' ? 'selected' : ''}>مستهلك (استهلاك المولد)</option>
+              ${historicalManualConsumption ? '<option value="consumed" selected>سجل استهلاك تاريخي (للعرض فقط)</option>' : ''}
             </select>
           </label>
           <label>اليوم<input name="day" required value="${esc(entry.day)}"></label>
@@ -368,7 +424,7 @@
           <label id="quantityLabel" style="display: ${type === 'consumed' ? 'none' : 'block'};">كمية الوقود باللتر<input name="quantityLiters" type="number" min="0.01" step="0.01" value="${esc(type === 'consumed' ? '' : entry.quantityLiters)}"></label>
           <label class="wide">ملاحظات اختيارية<textarea name="notes">${esc(entry.notes)}</textarea></label>
         </form>
-        <div class="fuel-modal-actions"><button class="btn primary big" onclick="WaterFuel.saveFuelEntry()">حفظ سجل الوقود</button><button class="btn" onclick="WaterFuel.closeFuelModal()">إلغاء</button></div>
+        <div class="fuel-modal-actions">${historicalManualConsumption ? '<span class="muted">سجلات الاستهلاك اليدوي التاريخية محفوظة ولا تدخل رصيد الدورة الحالية.</span>' : '<button class="btn primary big" onclick="WaterFuel.saveFuelEntry()">حفظ سجل الوقود</button>'}<button class="btn" onclick="WaterFuel.closeFuelModal()">إغلاق</button></div>
       </div>
     </div>`;
   }
@@ -395,6 +451,9 @@
     const form = document.getElementById('fuelEntryForm');
     const data = new FormData(form);
     const type = data.get('type') || 'incoming';
+    if (type === 'consumed') {
+      throw new Error('استهلاك الوقود يسجل من التقرير اليومي فقط. السجلات اليدوية التاريخية للعرض فقط.');
+    }
 
     let payload = {
       type,
@@ -404,30 +463,16 @@
       notes: clean(data.get('notes'))
     };
 
-    if (type === 'consumed') {
-      payload.quantityLiters = num(data.get('quantityConsumed'));
-      payload.consumedFor = clean(data.get('consumedFor')) || 'المولد الكهربائي';
-      payload.receivedBy = clean(data.get('receivedBy'));
-      payload.supplier = '';
-      payload.source = '';
-      payload.fillingMethod = '';
-      payload.deliveredBy = '';
+    payload.quantityLiters = num(data.get('quantityLiters'));
+    payload.supplier = clean(data.get('supplier'));
+    payload.source = clean(data.get('source')) || 'municipality';
+    payload.fillingMethod = clean(data.get('fillingMethod'));
+    payload.deliveredBy = clean(data.get('deliveredBy'));
+    payload.consumedFor = '';
+    payload.receivedBy = '';
 
-      if (!payload.day || !payload.date || !payload.time || !payload.receivedBy) {
-        throw new Error('يرجى تعبئة جميع الحقول الأساسية للاستهلاك.');
-      }
-    } else {
-      payload.quantityLiters = num(data.get('quantityLiters'));
-      payload.supplier = clean(data.get('supplier'));
-      payload.source = clean(data.get('source')) || 'municipality';
-      payload.fillingMethod = clean(data.get('fillingMethod'));
-      payload.deliveredBy = clean(data.get('deliveredBy'));
-      payload.consumedFor = '';
-      payload.receivedBy = '';
-
-      if (!payload.day || !payload.date || !payload.time || !payload.supplier || !payload.fillingMethod || !payload.deliveredBy) {
-        throw new Error('يرجى تعبئة جميع الحقول الأساسية للتوريد.');
-      }
+    if (!payload.day || !payload.date || !payload.time || !payload.supplier || !payload.fillingMethod || !payload.deliveredBy) {
+      throw new Error('يرجى تعبئة جميع الحقول الأساسية للتوريد.');
     }
 
     if (!Number.isFinite(payload.quantityLiters) || payload.quantityLiters <= 0) {
@@ -579,7 +624,9 @@
     patchDom,
     toggleFuelFields,
     renderStableFuelSection,
-    getAccounting
+    getAccounting,
+    getCycleLedger,
+    FUEL_CYCLE_START
   };
 
   window.FuelSourceFix = {
