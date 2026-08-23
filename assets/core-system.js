@@ -4,7 +4,7 @@
    FILE: version-guard.js
    ========================================== */
 (() => {
-  const BUILD_ID = window.WATER_APP_BUILD || '20260823-prod-stable-v1';
+  const BUILD_ID = window.WATER_APP_BUILD || '20260823-fuel-cycle-admin-082b9e2-v2';
   const BUILD_KEY = 'waterAppBuildId';
   const SAFE_CACHE_KEYS = [/cache/i, /snapshot/i, /lastHtml/i, /stale/i, /oldUi/i];
 
@@ -50,8 +50,10 @@
       safeStorageCleanup(previousBuild);
       localStorage.setItem(BUILD_KEY, BUILD_ID);
       localStorage.setItem('waterAppLastBootAt', new Date().toISOString());
+      return Boolean(previousBuild && previousBuild !== BUILD_ID);
     } catch (error) {
       console.warn('Build marker skipped', error);
+      return false;
     }
   }
 
@@ -89,8 +91,8 @@
     }
   };
 
-  markBuild();
-  clearBrowserCaches();
+  const buildChanged = markBuild();
+  if (buildChanged) clearBrowserCaches();
   forceVersionedUrl();
   setTimeout(releaseBootLock, 4500);
 })();
@@ -220,7 +222,7 @@
 /* ==========================================
    FILE: firebase-config.js
    ========================================== */
-window.WATER_APP_FIREBASE_CONFIG = {
+window.WATER_APP_FIREBASE_CONFIG = window.WATER_APP_FIREBASE_CONFIG || {
   apiKey: "AIzaSyDSutT8QUKJDV756T3dzYD915BDS4k2Iw8",
   authDomain: "fridge-oracle-sza.firebaseapp.com",
   projectId: "fridge-oracle-sza",
@@ -247,6 +249,31 @@ window.FirebaseService = (() => {
   let app = null;
   let auth = null;
   let db = null;
+  let emulatorConfigured = false;
+
+  function isLoopbackHost(host) {
+    return host === 'localhost' || host === '127.0.0.1' || host === '::1';
+  }
+
+  function configureEmulators() {
+    const emulator = window.WATER_APP_EMULATOR;
+    if (!emulator?.enabled || emulatorConfigured) return;
+    const host = String(emulator.host || '127.0.0.1');
+    const pageHost = window.location?.hostname || '';
+    if (!isLoopbackHost(host) || !isLoopbackHost(pageHost)) {
+      throw new Error('رفض وضع المحاكي: يجب أن تكون الصفحة والخدمات على loopback فقط.');
+    }
+    const authPort = Number(emulator.authPort || 9099);
+    const firestorePort = Number(emulator.firestorePort || 8080);
+    if (!Number.isInteger(authPort) || !Number.isInteger(firestorePort)) {
+      throw new Error('رفض وضع المحاكي: منافذ المحاكي غير صالحة.');
+    }
+    auth.useEmulator(`http://${host}:${authPort}`, { disableWarnings: true });
+    db.useEmulator(host, firestorePort);
+    emulatorConfigured = true;
+    window.WATER_APP_RUNTIME = Object.freeze({ mode: 'emulator', host, authPort, firestorePort });
+    console.info('WaterDash Firebase Emulator active', window.WATER_APP_RUNTIME);
+  }
 
   function init() {
     if (!isConfigured) return { configured: false };
@@ -254,6 +281,7 @@ window.FirebaseService = (() => {
     else app = firebase.app();
     auth = firebase.auth();
     db = firebase.firestore();
+    configureEmulators();
     return { configured: true, app, auth, db };
   }
 
@@ -266,22 +294,26 @@ window.FirebaseService = (() => {
     return db.collection(name);
   }
 
-  async function signIn(username, password) {
+  async function signIn(email, password) {
     init();
-    const validUser = username === window.WATER_APP_SETTINGS.defaultUserName;
-    const validPass = password === (window.WATER_APP_SETTINGS.defaultPassword || window.WATER_APP_SETTINGS.defaultUserName);
-    if (!validUser || !validPass) throw new Error('بيانات الدخول غير صحيحة.');
-    return auth.signInAnonymously();
+    if (window.AuthUsers?.signIn) return window.AuthUsers.signIn(email, password);
+    const normalizedEmail = String(email || '').trim();
+    if (!normalizedEmail.includes('@')) throw new Error('أدخل بريدًا إلكترونيًا صالحًا.');
+    return auth.signInWithEmailAndPassword(normalizedEmail, String(password || ''));
   }
 
   async function signOut() {
     if (!auth) init();
+    window.AuthUsers?.clearCurrentUser?.();
     return auth.signOut();
   }
 
   function onAuth(callback) {
     init();
-    return auth.onAuthStateChanged(callback);
+    return auth.onAuthStateChanged(async user => {
+      await window.AuthUsers?.syncFirebaseUser?.(user);
+      return callback(user);
+    });
   }
 
   function listenReports(callback) {
@@ -341,6 +373,9 @@ window.FirebaseService = (() => {
 
   async function seedSettings() {
     init();
+    if (window.WATER_APP_BOOTSTRAP_SETTINGS !== true) {
+      throw new Error('تهيئة الإعدادات تتطلب تفعيلًا صريحًا في بيئة آمنة.');
+    }
     await collection('settings').doc('main').set({
       appName: window.WATER_APP_SETTINGS.appName,
       defaultStationName: window.WATER_APP_SETTINGS.defaultStationName,

@@ -391,7 +391,6 @@ window.App = (() => {
       }
       window.ThemeManager?.loadUserTheme(user);
       await loadRemoteSettings(user);
-      window.FirebaseService.seedSettings().catch(console.warn);
       if (state.unsubscribe) state.unsubscribe();
       state.unsubscribe = window.FirebaseService.listenReports(reports => {
         state.reports = reports;
@@ -906,22 +905,8 @@ window.App = (() => {
           const cons = decHours * fuelRate;
           r.fuel.consumedDaily = window.ReportUtils?.number ? window.ReportUtils.number(cons.toFixed(2)) : Number(cons.toFixed(2));
         }
-        
-        if (i > 0) {
-           r.fuel.previousBalance = previousFuelBalance;
-        }
-        
-        const prev = Number(r.fuel.previousBalance) || 0;
-        const added = Number(r.fuel.addedDaily) || 0;
-        const municipal = Number(r.fuel.municipalSupplied) || 0;
-        const consumed = Number(r.fuel.consumedDaily) || 0;
-        
-        const current = prev + added + municipal - consumed;
-        r.fuel.currentBalance = window.ReportUtils?.number ? window.ReportUtils.number(current.toFixed(2)) : Number(current.toFixed(2));
-        
-        previousFuelBalance = r.fuel.currentBalance;
       }
-      
+
       if (window.ReportUtils?.recalc) r = window.ReportUtils.recalc(r);
       if (window.FirebaseService?.saveReport) await window.FirebaseService.saveReport(r, state.user, r.id);
     }

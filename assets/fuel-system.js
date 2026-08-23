@@ -5,6 +5,11 @@
    ========================================== */
 (function () {
   const COLLECTION = 'fuelEntries';
+  const CYCLE_SETTINGS_COLLECTION = 'settings';
+  const CYCLE_SETTINGS_DOC = 'fuelCycle';
+  // Local operational dates are stored as calendar strings. Do not convert these
+  // values through Date/UTC: the fuel-cycle boundary is Palestine-local.
+  const DEFAULT_FUEL_CYCLE_START = '2026-08-22';
   const state = {
     entries: [],
     rawEntries: [],
@@ -12,7 +17,14 @@
     unsubscribe: null,
     observerStarted: false,
     editingId: null,
-    saving: false
+    saving: false,
+    cycleUnsubscribe: null,
+    cycle: {
+      startDate: DEFAULT_FUEL_CYCLE_START,
+      revision: 0,
+      loaded: false,
+      modal: null
+    }
   };
 
   function esc(value) {
@@ -33,8 +45,15 @@
     return Number.isInteger(r) ? String(r) : String(r);
   }
 
+  function palestineDate(value = new Date()) {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Gaza', year: 'numeric', month: '2-digit', day: '2-digit'
+    }).formatToParts(value).reduce((result, part) => ({ ...result, [part.type]: part.value }), {});
+    return `${parts.year}-${parts.month}-${parts.day}`;
+  }
+
   function today() {
-    return new Date().toISOString().slice(0, 10);
+    return palestineDate();
   }
 
   function timeNow() {
@@ -133,6 +152,89 @@
     return { unique, duplicates };
   }
 
+  function normalizeLocalDate(value) {
+    const text = String(value ?? '')
+      .trim()
+      .replace(/[٠-٩]/g, digit => '٠١٢٣٤٥٦٧٨٩'.indexOf(digit))
+      .replace(/[۰-۹]/g, digit => '۰۱۲۳۴۵۶۷۸۹'.indexOf(digit))
+      .replace(/[.]/g, '/')
+      .replace(/[\u066B]/g, '.');
+    const calendarDate = (year, month, day) => {
+      const candidate = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)));
+      // Date.UTC is used only to validate calendar components; stored dates
+      // remain untouched Palestine-local YYYY-MM-DD strings.
+      if (candidate.getUTCFullYear() !== Number(year) || candidate.getUTCMonth() !== Number(month) - 1 || candidate.getUTCDate() !== Number(day)) return '';
+      return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    };
+    const iso = text.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+    if (iso) return calendarDate(iso[1], iso[2], iso[3]);
+    const local = text.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
+    if (local) return calendarDate(local[3], local[2], local[1]);
+    return '';
+  }
+
+  // Pure, cycle-scoped inventory ledger. It does not read/write the DOM,
+  // Firestore, timers, or mutable module state.
+  function getCycleLedger({ fuelEntries = [], reports = [], cycleStart = DEFAULT_FUEL_CYCLE_START } = {}) {
+    const start = normalizeLocalDate(cycleStart);
+    if (!start) throw new Error('Fuel cycle start must be a local calendar date.');
+
+    const { unique } = splitUnique(Array.isArray(fuelEntries) ? fuelEntries : []);
+    const currentEntries = unique.filter(entry => {
+      const date = normalizeLocalDate(entry?.date);
+      return Boolean(date && date >= start);
+    });
+    const incomingEntries = currentEntries.filter(entry => entry?.type !== 'consumed');
+    const historicalManualConsumption = currentEntries.filter(entry => entry?.type === 'consumed');
+    const reportsUsed = (Array.isArray(reports) ? reports : []).filter(report => {
+      const date = normalizeLocalDate(report?.reportDate);
+      return Boolean(date && date >= start);
+    });
+
+    const incomingFuel = incomingEntries.reduce((sum, entry) => sum + num(entry?.quantityLiters), 0);
+    const reportConsumption = reportsUsed.reduce((sum, report) => sum + num(report?.fuel?.consumedDaily), 0);
+    const ignoredManualConsumption = historicalManualConsumption.reduce((sum, entry) => sum + num(entry?.quantityLiters), 0);
+
+    return {
+      cycleStart: start,
+      incomingFuel: +incomingFuel.toFixed(2),
+      reportConsumption: +reportConsumption.toFixed(2),
+      manualConsumption: 0,
+      ignoredManualConsumption: +ignoredManualConsumption.toFixed(2),
+      manualConsumptionPolicy: 'historical-manual-consumption-excluded',
+      totalConsumption: +reportConsumption.toFixed(2),
+      currentBalance: +(incomingFuel - reportConsumption).toFixed(2),
+      entriesUsed: incomingEntries.map(entry => ({ ...entry })),
+      reportsUsed: reportsUsed.map(report => ({ ...report }))
+    };
+  }
+
+  function activeCycleStart() {
+    return normalizeLocalDate(state.cycle.startDate) || DEFAULT_FUEL_CYCLE_START;
+  }
+
+  function currentCycleLedger() {
+    return getCycleLedger({
+      fuelEntries: state.rawEntries,
+      reports: window.App?.state?.reports || [],
+      cycleStart: activeCycleStart()
+    });
+  }
+
+  function cycleState() {
+    const ledger = currentCycleLedger();
+    return {
+      startDate: activeCycleStart(),
+      revision: state.cycle.revision,
+      loaded: state.cycle.loaded,
+      modal: state.cycle.modal ? {
+        ...state.cycle.modal,
+        preview: state.cycle.modal.preview ? { ...state.cycle.modal.preview } : null
+      } : null,
+      ledger
+    };
+  }
+
   function setEntries(list) {
     state.rawEntries = sortEntries(list || []);
     const split = splitUnique(state.rawEntries);
@@ -144,6 +246,146 @@
     }
   }
 
+  function setCycleConfig(data) {
+    const startDate = normalizeLocalDate(data?.startDate) || DEFAULT_FUEL_CYCLE_START;
+    const revision = Number.isInteger(data?.revision) && data.revision >= 0 ? data.revision : 0;
+    const changed = state.cycle.startDate !== startDate || state.cycle.revision !== revision || !state.cycle.loaded;
+    state.cycle.startDate = startDate;
+    state.cycle.revision = revision;
+    state.cycle.loaded = true;
+    if (changed && window.App?.render) window.App.render();
+    renderStableFuelSection();
+  }
+
+  function startCycleListener() {
+    if (state.cycleUnsubscribe || !configured()) return;
+    state.cycleUnsubscribe = db().collection(CYCLE_SETTINGS_COLLECTION).doc(CYCLE_SETTINGS_DOC).onSnapshot(snapshot => {
+      setCycleConfig(snapshot.exists ? snapshot.data() : null);
+    }, error => {
+      console.warn('fuel cycle listener error', error);
+      state.cycleUnsubscribe = null;
+      setCycleConfig(null);
+    });
+  }
+
+  function isSuperAdmin() {
+    return window.AuthUsers?.currentUser?.()?.role === 'superAdmin';
+  }
+
+  function requireCycleAdmin() {
+    if (isSuperAdmin()) return true;
+    toast('تغيير دورة الوقود متاح لمدير النظام فقط.', 'warn');
+    return false;
+  }
+
+  function cyclePreview(startDate) {
+    const selected = normalizeLocalDate(startDate);
+    if (!selected) return null;
+    return getCycleLedger({
+      fuelEntries: state.rawEntries,
+      reports: window.App?.state?.reports || [],
+      cycleStart: selected
+    });
+  }
+
+  function showCycleModal(action, selectedStart) {
+    if (!requireCycleAdmin()) return;
+    const startDate = normalizeLocalDate(selectedStart);
+    if (!startDate) {
+      toast('اختر تاريخ بداية صالحًا بصيغة YYYY-MM-DD.', 'warn');
+      return;
+    }
+    state.cycle.modal = {
+      action,
+      selectedStart: startDate,
+      expectedRevision: state.cycle.revision,
+      previousCycleStart: activeCycleStart(),
+      preview: cyclePreview(startDate)
+    };
+    window.App?.render?.();
+  }
+
+  function openCycleReset() {
+    showCycleModal('FUEL_CYCLE_RESET', palestineDate());
+  }
+
+  function openCycleRestore() {
+    showCycleModal('FUEL_CYCLE_RESTORE', activeCycleStart());
+  }
+
+  function previewCycleDate(value) {
+    if (!state.cycle.modal || state.cycle.modal.action !== 'FUEL_CYCLE_RESTORE') return;
+    const selectedStart = normalizeLocalDate(value);
+    if (!selectedStart) {
+      state.cycle.modal.preview = null;
+      state.cycle.modal.selectedStart = String(value || '');
+    } else {
+      state.cycle.modal.selectedStart = selectedStart;
+      state.cycle.modal.preview = cyclePreview(selectedStart);
+    }
+    window.App?.render?.();
+  }
+
+  function cancelCycleChange() {
+    state.cycle.modal = null;
+    window.App?.render?.();
+  }
+
+  async function confirmCycleChange() {
+    const modal = state.cycle.modal;
+    if (!modal || !requireCycleAdmin()) return;
+    const newCycleStart = normalizeLocalDate(modal.selectedStart);
+    if (!newCycleStart) {
+      toast('التاريخ المختار غير صالح.', 'warn');
+      return;
+    }
+    if (!configured()) {
+      toast('Firebase غير متاح أو غير مهيأ.', 'warn');
+      return;
+    }
+    const authUser = firebase.auth().currentUser;
+    if (!authUser?.uid) {
+      toast('انتهت الجلسة. سجّل الدخول من جديد.', 'warn');
+      return;
+    }
+    const cycleRef = db().collection(CYCLE_SETTINGS_COLLECTION).doc(CYCLE_SETTINGS_DOC);
+    const auditRef = db().collection('activityLogs').doc();
+    try {
+      await db().runTransaction(async transaction => {
+        const snapshot = await transaction.get(cycleRef);
+        const current = snapshot.exists ? snapshot.data() : {};
+        const previousCycleStart = normalizeLocalDate(current.startDate) || DEFAULT_FUEL_CYCLE_START;
+        const currentRevision = Number.isInteger(current.revision) ? current.revision : 0;
+        if (currentRevision !== modal.expectedRevision) {
+          throw new Error('تم تغيير دورة الوقود من جلسة أخرى. أعد فتح العملية لمراجعة الأرقام الحالية.');
+        }
+        if (previousCycleStart === newCycleStart) {
+          throw new Error('التاريخ المختار هو بداية الدورة الحالية بالفعل.');
+        }
+        const nextRevision = currentRevision + 1;
+        transaction.set(cycleRef, {
+          startDate: newCycleStart,
+          updatedAt: serverTime(),
+          updatedBy: authUser.uid,
+          revision: nextRevision
+        });
+        transaction.set(auditRef, {
+          actionType: modal.action,
+          previousCycleStart,
+          newCycleStart,
+          changedBy: authUser.uid,
+          changedAt: serverTime(),
+          cycleRevision: nextRevision
+        });
+      });
+      state.cycle.modal = null;
+      toast('تم تحديث بداية دورة الوقود. جميع الأرصدة الحالية أعيد احتسابها من السجل المعتمد.', 'ok');
+    } catch (error) {
+      toast(error?.message || 'تعذر تحديث دورة الوقود.', 'warn');
+      console.error(error);
+    }
+  }
+
   function startListener() {
     if (state.unsubscribe || !configured()) return;
     try {
@@ -152,6 +394,7 @@
         renderStableFuelSection();
       }, error => {
         console.warn('fuelEntries listener error', error);
+        state.unsubscribe = null;
         setEntries([]);
       });
     } catch (error) {
@@ -163,7 +406,7 @@
     if (!window.AuthUsers?.currentUser) return true;
     const user = window.AuthUsers.currentUser();
     if (!user) return true;
-    if (user.role === 'superAdmin' || user.roleLabel === 'مدير النظام') return true;
+    if (user.role === 'superAdmin') return true;
     return window.AuthUsers.hasPermission?.(permission) === true;
   }
 
@@ -267,9 +510,7 @@
     const { unique, duplicates } = splitUnique(rawEntries);
     const recent = unique.slice(0, 8);
 
-    const incoming = unique.filter(x => x.type !== 'consumed').reduce((sum, item) => sum + num(item.quantityLiters), 0);
-    const consumed = (window.App?.state?.reports || []).reduce((sum, r) => sum + num(r?.fuel?.consumedDaily), 0);
-    const stock = incoming - consumed;
+    const ledger = currentCycleLedger();
 
     section.dataset.sourceFixed = 'true';
     section.innerHTML = `
@@ -277,7 +518,7 @@
         <div>
           <p class="eyebrow">إدارة السولار</p>
           <h2>آخر حركات السولار المسجلة</h2>
-          <small>الوارد الكلي: <strong>${fmt(incoming)}</strong> لتر | المستهلك الكلي: <strong>${fmt(consumed)}</strong> لتر | الرصيد المتبقي: <strong>${fmt(stock)}</strong> لتر${duplicates.length ? ` — تم إخفاء ${duplicates.length} مكرر` : ''}</small>
+          <small>دورة الوقود من ${ledger.cycleStart}: الوارد <strong>${fmt(ledger.incomingFuel)}</strong> لتر | المستهلك من التقارير <strong>${fmt(ledger.reportConsumption)}</strong> لتر | الرصيد المتبقي <strong>${fmt(ledger.currentBalance)}</strong> لتر${duplicates.length ? ` — تم إخفاء ${duplicates.length} مكرر` : ''}</small>
         </div>
         <div class="fuel-head-actions">
           <button class="btn primary fuel-fixed-add" type="button" onclick="WaterFuel.openFuelModal()">➕ تسجيل حركة سولار</button>
@@ -330,6 +571,7 @@
 
   function modalHtml(entry) {
     const type = entry.type || 'incoming';
+    const historicalManualConsumption = type === 'consumed';
     return `<div id="fuelEntryModal" class="fuel-modal open" dir="rtl">
       <div class="fuel-modal-backdrop" onclick="WaterFuel.closeFuelModal()"></div>
       <div class="fuel-modal-panel">
@@ -337,9 +579,9 @@
         <div class="modal-title"><span>⛽</span><div><h2>${state.editingId ? 'تعديل حركة السولار' : 'تسجيل حركة سولار'}</h2><p>يتم حفظ هذا السجل في سجلات الوقود المستقلة.</p></div></div>
         <form id="fuelEntryForm" class="fuel-form">
           <label class="wide">نوع العملية
-            <select name="type" required onchange="WaterFuel.toggleFuelFields(this.value)">
+            <select name="type" required onchange="WaterFuel.toggleFuelFields(this.value)" ${historicalManualConsumption ? 'disabled' : ''}>
               <option value="incoming" ${type === 'incoming' ? 'selected' : ''}>وارد (توريد سولار للمحطة)</option>
-              <option value="consumed" ${type === 'consumed' ? 'selected' : ''}>مستهلك (استهلاك المولد)</option>
+              ${historicalManualConsumption ? '<option value="consumed" selected>سجل استهلاك تاريخي (للعرض فقط)</option>' : ''}
             </select>
           </label>
           <label>اليوم<input name="day" required value="${esc(entry.day)}"></label>
@@ -368,7 +610,7 @@
           <label id="quantityLabel" style="display: ${type === 'consumed' ? 'none' : 'block'};">كمية الوقود باللتر<input name="quantityLiters" type="number" min="0.01" step="0.01" value="${esc(type === 'consumed' ? '' : entry.quantityLiters)}"></label>
           <label class="wide">ملاحظات اختيارية<textarea name="notes">${esc(entry.notes)}</textarea></label>
         </form>
-        <div class="fuel-modal-actions"><button class="btn primary big" onclick="WaterFuel.saveFuelEntry()">حفظ سجل الوقود</button><button class="btn" onclick="WaterFuel.closeFuelModal()">إلغاء</button></div>
+        <div class="fuel-modal-actions">${historicalManualConsumption ? '<span class="muted">سجلات الاستهلاك اليدوي التاريخية محفوظة ولا تدخل رصيد الدورة الحالية.</span>' : '<button class="btn primary big" onclick="WaterFuel.saveFuelEntry()">حفظ سجل الوقود</button>'}<button class="btn" onclick="WaterFuel.closeFuelModal()">إغلاق</button></div>
       </div>
     </div>`;
   }
@@ -395,6 +637,9 @@
     const form = document.getElementById('fuelEntryForm');
     const data = new FormData(form);
     const type = data.get('type') || 'incoming';
+    if (type === 'consumed') {
+      throw new Error('استهلاك الوقود يسجل من التقرير اليومي فقط. السجلات اليدوية التاريخية للعرض فقط.');
+    }
 
     let payload = {
       type,
@@ -404,30 +649,16 @@
       notes: clean(data.get('notes'))
     };
 
-    if (type === 'consumed') {
-      payload.quantityLiters = num(data.get('quantityConsumed'));
-      payload.consumedFor = clean(data.get('consumedFor')) || 'المولد الكهربائي';
-      payload.receivedBy = clean(data.get('receivedBy'));
-      payload.supplier = '';
-      payload.source = '';
-      payload.fillingMethod = '';
-      payload.deliveredBy = '';
+    payload.quantityLiters = num(data.get('quantityLiters'));
+    payload.supplier = clean(data.get('supplier'));
+    payload.source = clean(data.get('source')) || 'municipality';
+    payload.fillingMethod = clean(data.get('fillingMethod'));
+    payload.deliveredBy = clean(data.get('deliveredBy'));
+    payload.consumedFor = '';
+    payload.receivedBy = '';
 
-      if (!payload.day || !payload.date || !payload.time || !payload.receivedBy) {
-        throw new Error('يرجى تعبئة جميع الحقول الأساسية للاستهلاك.');
-      }
-    } else {
-      payload.quantityLiters = num(data.get('quantityLiters'));
-      payload.supplier = clean(data.get('supplier'));
-      payload.source = clean(data.get('source')) || 'municipality';
-      payload.fillingMethod = clean(data.get('fillingMethod'));
-      payload.deliveredBy = clean(data.get('deliveredBy'));
-      payload.consumedFor = '';
-      payload.receivedBy = '';
-
-      if (!payload.day || !payload.date || !payload.time || !payload.supplier || !payload.fillingMethod || !payload.deliveredBy) {
-        throw new Error('يرجى تعبئة جميع الحقول الأساسية للتوريد.');
-      }
+    if (!payload.day || !payload.date || !payload.time || !payload.supplier || !payload.fillingMethod || !payload.deliveredBy) {
+      throw new Error('يرجى تعبئة جميع الحقول الأساسية للتوريد.');
     }
 
     if (!Number.isFinite(payload.quantityLiters) || payload.quantityLiters <= 0) {
@@ -512,7 +743,72 @@
   function init() {
     if (state.observerStarted) return;
     state.observerStarted = true;
+    if (window.firebase?.auth) {
+      firebase.auth().onAuthStateChanged(user => {
+        if (user) {
+          startListener();
+          startCycleListener();
+          return;
+        }
+        if (state.unsubscribe) state.unsubscribe();
+        if (state.cycleUnsubscribe) state.cycleUnsubscribe();
+        state.unsubscribe = null;
+        state.cycleUnsubscribe = null;
+        state.cycle = { startDate: DEFAULT_FUEL_CYCLE_START, revision: 0, loaded: false, modal: null };
+        setEntries([]);
+      });
+    }
     window.addEventListener('DOMContentLoaded', () => setTimeout(patchDom, 300));
+  }
+
+  function getAccounting(report) {
+    if (!report) return {};
+    const f = report.fuel || {};
+    
+    let repConsumed = '';
+    const fuelRate = Number(window.WATER_APP_SETTINGS?.fuelRate) || 19;
+    if (f.consumedDaily === '' || f.consumedDaily == null) {
+      const [h, m = 0] = String(report.generator?.totalRunHours || '0:0').split(':').map(Number);
+      const decHours = (Number(h) || 0) + ((Number(m) || 0) / 60);
+      if (decHours > 0) {
+        repConsumed = String(+Number(decHours * fuelRate).toFixed(2));
+      }
+    } else {
+      const nCons = num(f.consumedDaily);
+      if (nCons > 0) repConsumed = String(+nCons.toFixed(2));
+    }
+    
+    let prev = '';
+    let current = '';
+    const p = num(f.previousBalance);
+    const c = num(f.currentBalance);
+    
+    if (f.previousBalance !== '' && f.previousBalance != null && p >= 0) {
+      prev = String(+p.toFixed(2));
+    }
+    if (f.currentBalance !== '' && f.currentBalance != null && c >= 0) {
+      current = String(+c.toFixed(2));
+    }
+    
+    let added = '';
+    if (f.addedDaily !== '' && f.addedDaily != null) added = String(+num(f.addedDaily).toFixed(2));
+    let municipal = '';
+    if (f.municipalSupplied !== '' && f.municipalSupplied != null) municipal = String(+num(f.municipalSupplied).toFixed(2));
+    let loss = '';
+    if (f.loss !== '' && f.loss != null) loss = String(+num(f.loss).toFixed(2));
+
+    return {
+      cycleStart: null,
+      incoming: null,
+      consumed: null,
+      balance: null,
+      consumedDaily: repConsumed,
+      previousBalance: prev,
+      currentBalance: current,
+      addedDaily: added,
+      municipalSupplied: municipal,
+      loss: loss
+    };
   }
 
   window.WaterFuel = {
@@ -528,7 +824,19 @@
     toggleMoreMenu,
     patchDom,
     toggleFuelFields,
-    renderStableFuelSection
+    renderStableFuelSection,
+    getAccounting,
+    getCycleLedger,
+    getCurrentCycleLedger: currentCycleLedger,
+    getCycleState: cycleState,
+    getCyclePreview: cyclePreview,
+    openCycleReset,
+    openCycleRestore,
+    previewCycleDate,
+    cancelCycleChange,
+    confirmCycleChange,
+    palestineDate,
+    FUEL_CYCLE_START: DEFAULT_FUEL_CYCLE_START
   };
 
   window.FuelSourceFix = {
